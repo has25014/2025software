@@ -1,100 +1,125 @@
 import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+import plotly.express as px
 
-# 페이지 기본 설정
+# -----------------------
+# 기본 설정
+# -----------------------
 st.set_page_config(
-    page_title="베스킨라빈스 키오스크",
-    page_icon="🍨",
+    page_title="국가별 MBTI 대시보드",
+    page_icon="🌍",
+    layout="wide",
 )
 
-st.title("🍨 베스킨라빈스 키오스크")
-st.caption("천천히 골라도 괜찮아요! 제가 끝까지 도와드릴게요 😊")
+st.title("🌍 국가별 MBTI 분포 대시보드")
+st.caption("국가를 선택하면 해당 국가의 MBTI 비율을 인터랙티브 그래프로 보여줄게요 😄")
 
-st.markdown("---")
+# -----------------------
+# 데이터 불러오기
+# -----------------------
+@st.cache_data
+def load_data():
+    # 같은 폴더에 있는 CSV 파일
+    df = pd.read_csv("countriesMBTI_16types.csv")
+    return df
 
-# 1. 매장에서 / 포장 선택
-eat_where = st.radio(
-    "1️⃣ 어디서 드실 건가요?",
-    ("매장에서 먹고 갈게요 🪑", "포장해서 가져갈게요 🛍️")
+df = load_data()
+
+# 컬럼 분리
+country_col = "Country"
+mbti_cols = [c for c in df.columns if c != country_col]
+
+# -----------------------
+# 사이드바: 국가 선택
+# -----------------------
+st.sidebar.header("⚙️ 설정")
+selected_country = st.sidebar.selectbox(
+    "국가를 선택해 주세요:",
+    sorted(df[country_col].unique())
 )
 
-st.markdown("---")
+st.sidebar.markdown("선택한 국가의 MBTI 분포를 아래 그래프로 확인해 보세요 👀")
 
-# 2. 용기 사이즈 선택
-st.subheader("2️⃣ 용기 사이즈를 선택해 주세요 📦")
+# -----------------------
+# 선택한 국가의 MBTI 분포 준비
+# -----------------------
+country_row = df[df[country_col] == selected_country].iloc[0]
 
-size_info = {
-    "싱글컵 (1스쿱)": {"price": 3500, "scoops": 1},
-    "더블컵 (2스쿱)": {"price": 6500, "scoops": 2},
-    "파인트 (3스쿱)": {"price": 8200, "scoops": 3},
-    "쿼터 (4스쿱)": {"price": 15500, "scoops": 4},
-}
-
-size_name = st.selectbox(
-    "용기 사이즈를 골라 주세요:",
-    list(size_info.keys())
+mbti_values = country_row[mbti_cols]
+mbti_df = (
+    mbti_values
+    .reset_index()
+    .rename(columns={"index": "MBTI", 0: "Value"})
 )
 
-selected_size = size_info[size_name]
-num_scoops = selected_size["scoops"]
-base_price = selected_size["price"]
+# 내림차순 정렬 (1등 찾기)
+mbti_df = mbti_df.sort_values("Value", ascending=False).reset_index(drop=True)
 
-st.info(f"➡️ 이 사이즈는 **{num_scoops}가지 맛**을 담을 수 있어요! 🍨")
+# -----------------------
+# 색상 설정: 1등은 빨간색, 나머지는 그라데이션
+# -----------------------
+n = len(mbti_df)
 
-st.markdown("---")
+# 파란 계열 그라데이션 색상 생성
+gradient_colors = px.colors.sample_colorscale(
+    "Blues",
+    [i / (n - 1) for i in range(n)]
+)
 
-# 3. 맛 선택 (스쿱 수에 맞게)
-st.subheader("3️⃣ 아이스크림 맛을 골라 주세요 😋")
+colors = gradient_colors.copy()
+# 1등 막대는 붉은색으로 강조
+colors[0] = "#FF4B4B"
 
-flavors = [
-    "아몬드 봉봉",
-    "베리베리 스트로베리",
-    "슈팅스타",
-    "초콜릿 무스",
-    "민트 초콜릿 칩",
-    "뉴욕 치즈케이크",
-    "바람과 함께 사라지다",
-    "피스타치오 아몬드",
-    "엄마는 외계인",
-    "체리쥬빌레",
-]
-
-selected_flavors = []
-
-for i in range(num_scoops):
-    flavor = st.selectbox(
-        f"{i + 1}번째 맛을 골라 주세요:",
-        flavors,
-        key=f"flavor_{i}"
+# -----------------------
+# Plotly 그래프 생성
+# -----------------------
+fig = go.Figure(
+    data=go.Bar(
+        x=mbti_df["MBTI"],
+        y=mbti_df["Value"],
+        marker_color=colors,
+        text=mbti_df["Value"].round(2),
+        textposition="outside",
+        hovertemplate="<b>%{x}</b><br>값: %{y}<extra></extra>",
     )
-    selected_flavors.append(flavor)
-
-st.markdown("---")
-
-# 4. 결제 수단 & 최종 확인
-st.subheader("4️⃣ 결제 수단을 선택해 주세요 💳")
-
-payment_method = st.radio(
-    "어떤 방법으로 결제하시겠어요?",
-    ("현금 결제 🧾", "카드 결제 💳")
 )
 
-# 필요하다면 포장 추가금 같은 것도 여기서 더할 수 있음
-total_price = base_price  # 지금은 사이즈 가격만 사용
+fig.update_layout(
+    title={
+        "text": f"🇺🇳 {selected_country} 의 MBTI 분포",
+        "x": 0.5,
+        "xanchor": "center",
+        "yanchor": "top",
+    },
+    xaxis_title="MBTI 유형",
+    yaxis_title="값 (비율 또는 점수)",
+    yaxis=dict(tickformat=".2f"),
+    template="simple_white",
+    margin=dict(l=40, r=40, t=80, b=40),
+)
 
-st.markdown("### 💰 최종 결제 금액")
-st.metric(label="총 금액", value=f"{total_price:,} 원")
+# -----------------------
+# 화면에 출력
+# -----------------------
+st.plotly_chart(fig, use_container_width=True)
+
+# -----------------------
+# 부가 정보 텍스트
+# -----------------------
+top_type = mbti_df.iloc[0]["MBTI"]
+top_value = mbti_df.iloc[0]["Value"]
 
 st.markdown("---")
+st.subheader("📌 요약 정보")
 
-if st.button("✅ 주문 완료하기"):
-    # 텍스트 정리
-    where_text = "매장에서 드시고 가는 것" if "매장에서" in eat_where else "포장해서 가져가시는 것"
-    flavor_text = " / ".join(selected_flavors)
+st.markdown(
+    f"""
+- 선택한 국가: **{selected_country}**
+- 가장 비율이 높은 MBTI: **{top_type}** 🔴 (값: **{top_value:.2f}**)
+- 나머지 유형들은 파란색 계열 그라데이션으로 표시했어요 💙  
+- 막대 위 숫자와, 마우스를 올렸을 때 나오는 툴팁으로 값을 자세히 확인할 수 있어요!
+"""
+)
 
-    st.success("주문이 정상적으로 접수되었습니다! 🎉")
-    st.write(f"👉 드시는 방식: **{where_text}**")
-    st.write(f"👉 선택하신 사이즈: **{size_name}**")
-    st.write(f"👉 선택하신 맛: **{flavor_text}**")
-    st.write(f"👉 결제 수단: **{payment_method}**")
-    st.write(f"👉 결제하실 금액은 **{total_price:,}원** 입니다. 감사합니다! 🥰")
-    st.balloons()
+st.info("필요하면 나중에 I/E, N/S, F/T, J/P 축별로 합쳐서 비교하는 그래프도 추가해 볼 수 있어요 😊")
