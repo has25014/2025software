@@ -2,9 +2,116 @@ import streamlit as st
 import pandas as pd
 import urllib.parse
 import streamlit.components.v1 as components
+import io
+import re
 
 # ----------------------------------------
-# Functions
+# 등기부 텍스트 추출 & 분석 함수
+# ----------------------------------------
+def extract_text_from_registry_file(uploaded_file):
+    """
+    PDF 등기부에서 텍스트를 뽑는 함수.
+    - 텍스트 기반 PDF면 비교적 잘 뽑힘
+    - 스캔 이미지 PDF / JPG / PNG 는 여기서 분석 불가 (OCR 필요)
+    """
+    if uploaded_file is None:
+        return ""
+
+    # PDF만 텍스트 추출 시도
+    if uploaded_file.type == "application/pdf":
+        try:
+            from PyPDF2 import PdfReader  # requirements.txt에 PyPDF2 추가 필요
+
+            pdf_bytes = uploaded_file.read()
+            reader = PdfReader(io.BytesIO(pdf_bytes))
+            texts = []
+            for page in reader.pages:
+                try:
+                    t = page.extract_text() or ""
+                except Exception:
+                    t = ""
+                texts.append(t)
+            full_text = "\n".join(texts)
+            return full_text
+        except Exception as e:
+            # PyPDF2 없거나 PDF 구조가 특이할 때
+            return ""
+    else:
+        # 이미지(JPG/PNG)는 현재 OCR 미지원
+        return ""
+
+
+def analyze_registry_text(text):
+    """
+    등기부 원문 텍스트를 매우 단순하게 패턴 매칭해서 위험 신호를 뽑는 함수.
+    - 실제 등기부 포맷은 다양하므로 '대략적인 참고용'임.
+    """
+    text = (text or "").strip()
+    result = {
+        "raw_text": text,
+        "preview": text[:1500] if text else "",
+        "mortgage_count": 0,
+        "mortgage_total": 0,
+        "owner_lines": [],
+        "warnings": [],
+    }
+
+    if not text:
+        result["warnings"].append("텍스트를 추출하지 못했습니다. (스캔 이미지이거나 PDF 구조 문제일 수 있어요.)")
+        return result
+
+    # 근저당권 개수
+    mortgage_count = text.count("근저당권")
+    result["mortgage_count"] = mortgage_count
+
+    # 채권최고액 합계(숫자만 대충 더하기)
+    amounts = re.findall(r"채권최고액\s*([\d,]+)\s*원", text)
+    total_amount = 0
+    for a in amounts:
+        try:
+            total_amount += int(a.replace(",", ""))
+        except ValueError:
+            pass
+    result["mortgage_total"] = total_amount
+
+    # 소유자 관련 줄 (소유자 / 소유권이 포함된 라인 몇 개만 보기)
+    owner_candidates = []
+    for line in text.splitlines():
+        if ("소유자" in line) or ("소유권" in line):
+            owner_candidates.append(line.strip())
+    result["owner_lines"] = owner_candidates[:5]
+
+    # 위험 신호 문구들
+    warnings = []
+
+    if mortgage_count >= 2:
+        warnings.append(f"근저당권이 {mortgage_count}건 등기되어 있습니다. (선순위 권리관계 꼭 확인 필요)")
+    elif mortgage_count == 1:
+        warnings.append("근저당권이 1건 등기되어 있습니다. 채권최고액과 보증금 규모를 꼭 비교해 보세요.")
+
+    if total_amount > 0:
+        warnings.append(f"채권최고액 합계가 약 {total_amount:,}원 정도로 표시됩니다. (실제 매매가·보증금과 비교 필요)")
+
+    if "가압류" in text:
+        warnings.append("등기부에 '가압류' 기록이 있습니다. 채권자가 재산을 묶어둔 상태일 수 있어요.")
+    if "가처분" in text:
+        warnings.append("등기부에 '가처분' 기록이 있습니다. 소유권 분쟁 가능성을 의심해 볼 수 있어요.")
+    if "압류" in text:
+        warnings.append("등기부에 '압류' 기록이 있습니다. 세금·채무 문제 여부를 꼭 확인해야 합니다.")
+    if "경매개시결정" in text or "경매 개시결정" in text:
+        warnings.append("등기부에 '경매개시결정' 기록이 있습니다. 매우 위험한 매물일 수 있어요.")
+
+    if not warnings:
+        warnings.append(
+            "텍스트에서 뚜렷한 근저당/가압류/경매 관련 키워드가 많이 보이지 않습니다.\n"
+            "그래도 최종 판단은 반드시 전문가와 등기부 원문을 함께 보고 결정해야 합니다."
+        )
+
+    result["warnings"] = warnings
+    return result
+
+# ----------------------------------------
+# 기존 위험도 / 주변 교통 함수들
 # ----------------------------------------
 def compute_risk_score(deposit, rent, contract_type, memo=""):
     if deposit <= 0:
@@ -120,33 +227,28 @@ def get_lifestyle_comment(address: str, noise_sensitive: bool, hate_walking: boo
 
 
 def get_poi_summary_text(address: str) -> str:
-    """주소를 기반으로 주변 지하철/편의점/공원/큰 도로 정보를 요약(예시)"""
     addr = (address or "").strip()
     if not addr:
         return ""
     lines = []
-    # 서울 마곡/서울식물원 근처 느낌
     if ("마곡" in addr) or ("서울식물원" in addr) or ("강서구" in addr):
         lines.append("**주변 편의·교통·공원 정보 (예시)**")
         lines.append("- 지하철: 마곡나루역·마곡역·양천향교역 중 한 곳이 도보/버스로 접근 가능한 생활권일 수 있어요.")
         lines.append("- 편의점: 마곡지구 내 GS25·CU·이마트24 등 편의점이 도보 3~5분 거리에 여러 곳 있을 가능성이 높아요.")
         lines.append("- 공원·녹지: 서울식물원, 한강 방화대교 주변 수변공원 등이 가깝다는 장점이 있어요.")
         lines.append("- 큰 도로·고속도로: 올림픽대로, 방화대교·가양대교 진입이 가까워 차량 이동은 편하지만, 교통량에 따른 소음은 체크가 필요해요.")
-    # 은평/구파발/연신내 근처 느낌
     elif ("은평" in addr) or ("구파발" in addr) or ("연신내" in addr):
         lines.append("**주변 편의·교통·공원 정보 (예시)**")
         lines.append("- 지하철: 3호선 구파발역·연신내역 등으로 출퇴근하는 생활권일 가능성이 높아요.")
         lines.append("- 편의점: 역세권과 주거지 사이에 편의점·카페·프랜차이즈 음식점이 밀집된 구간이 많아요.")
         lines.append("- 공원·녹지: 북한산, 불광천 산책로 등 자연 접근성이 좋지만 산·하천 인접 여부에 따라 벌레·습도도 체크해야 해요.")
         lines.append("- 큰 도로·고속도로: 통일로, 내부순환로 진입이 가까워 차량 소음과 매연도 함께 확인해보는 게 좋아요.")
-    # 강남/서초 근처 느낌
     elif ("강남" in addr) or ("서초" in addr):
         lines.append("**주변 편의·교통·공원 정보 (예시)**")
         lines.append("- 지하철: 2호선·3호선·9호선·신분당선 등 여러 노선을 환승할 수 있는 역세권일 가능성이 높아요.")
         lines.append("- 편의점: 블록마다 편의점·카페·프랜차이즈 음식점이 있을 정도로 생활 편의시설이 매우 풍부해요.")
         lines.append("- 공원·녹지: 양재천, 탄천, 역삼·서초 일대 소규모 공원 등 산책 코스를 찾기 괜찮은 편이에요.")
         lines.append("- 큰 도로·고속도로: 경부고속도로, 테헤란로, 남부순환로 등 대형 도로와 가깝다면 소음·매연이 강할 수 있어요.")
-    # 그 외는 개략 예시
     else:
         lines.append("**주변 편의·교통·공원 정보 (개략 예시)**")
         lines.append("- 지하철/전철: 입력한 주소 주변의 가장 가까운 역까지 도보 시간·거리 정보를 지도 API로 계산해 보여줄 수 있어요.")
@@ -156,7 +258,6 @@ def get_poi_summary_text(address: str) -> str:
     lines.append("")
     lines.append("※ 실제 서비스에서는 지도·장소 API를 활용해 역/편의점/공원/고속도로까지의 실제 거리를 계산해 줄 수 있습니다.")
     return "\n".join(lines)
-
 
 # ----------------------------------------
 # Page config & title
@@ -175,10 +276,17 @@ st.write("")
 # 상단 탭 구성
 # ----------------------------------------
 main_tab, tab_check, tab_review, tab_after, tab_share, tab_sim = st.tabs(
-    ["🏠 메인 (주소·위험도·지도)", "✅ 계약 전 체크리스트", "📝 집 후기", "⚖️ 분쟁 발생 시 대응", "📤 부모님과 결과 공유", "📊 조건 시뮬레이션"]
+    [
+        "🏠 메인 (주소·위험도·지도)",
+        "✅ 계약 전 체크리스트",
+        "📝 집 후기",
+        "⚖️ 분쟁 발생 시 대응",
+        "📤 부모님과 결과 공유",
+        "📊 조건 시뮬레이션",
+    ]
 )
 
-# 기본 변수들 기본값 (탭 간 공유용)
+# 탭 간 공유용 상태 기본값
 if "address" not in st.session_state:
     st.session_state["address"] = ""
 if "deposit" not in st.session_state:
@@ -201,6 +309,8 @@ if "score" not in st.session_state:
     st.session_state["score"] = None
 if "memo_issues" not in st.session_state:
     st.session_state["memo_issues"] = []
+if "registry_analysis" not in st.session_state:
+    st.session_state["registry_analysis"] = None
 
 # ---------------- 메인 탭 ----------------
 with main_tab:
@@ -210,53 +320,57 @@ with main_tab:
         st.header("1. 기본 정보 입력")
 
         st.session_state["address"] = st.text_input(
-            "집 주소", 
+            "집 주소",
             value=st.session_state["address"],
-            placeholder="예) 서울시 ○○구 ○○로 123, 302호"
+            placeholder="예) 서울시 ○○구 ○○로 123, 302호",
         )
 
         c1, c2 = st.columns(2)
         with c1:
             st.session_state["deposit"] = st.number_input(
-                "보증금 (만원)", 
-                min_value=0, 
-                step=100, 
-                value=st.session_state["deposit"]
+                "보증금 (만원)",
+                min_value=0,
+                step=100,
+                value=st.session_state["deposit"],
             )
         with c2:
             st.session_state["rent"] = st.number_input(
-                "월세 (만원)", 
-                min_value=0, 
-                step=5, 
-                value=st.session_state["rent"]
+                "월세 (만원)",
+                min_value=0,
+                step=5,
+                value=st.session_state["rent"],
             )
 
         c3, c4 = st.columns(2)
         with c3:
             st.session_state["contract_type"] = st.selectbox(
-                "계약 형태", 
+                "계약 형태",
                 ["전세", "반전세", "월세"],
-                index=["전세", "반전세", "월세"].index(st.session_state["contract_type"])
+                index=["전세", "반전세", "월세"].index(
+                    st.session_state["contract_type"]
+                ),
             )
         with c4:
             st.session_state["tenant_type"] = st.selectbox(
-                "세입자 유형", 
+                "세입자 유형",
                 ["학생·청년", "1인 가구", "가족 세대", "외국인 세입자"],
-                index=["학생·청년", "1인 가구", "가족 세대", "외국인 세입자"].index(st.session_state["tenant_type"])
+                index=["학생·청년", "1인 가구", "가족 세대", "외국인 세입자"].index(
+                    st.session_state["tenant_type"]
+                ),
             )
 
         st.markdown("**생활 패턴 체크 (선택)**")
         st.session_state["noise_sensitive"] = st.checkbox(
-            "소음에 예민한 편이에요", 
-            value=st.session_state["noise_sensitive"]
+            "소음에 예민한 편이에요",
+            value=st.session_state["noise_sensitive"],
         )
         st.session_state["hate_walking"] = st.checkbox(
             "걷는 걸 별로 좋아하지 않아요 (역·버스는 최대한 가까웠으면 좋겠어요)",
-            value=st.session_state["hate_walking"]
+            value=st.session_state["hate_walking"],
         )
         st.session_state["night_active"] = st.checkbox(
             "야행성/늦게까지 깨어 있는 편이에요",
-            value=st.session_state["night_active"]
+            value=st.session_state["night_active"],
         )
 
         st.session_state["memo"] = st.text_area(
@@ -269,9 +383,9 @@ with main_tab:
         st.caption("※ 메모에 적은 곰팡이·누수·소음·악취·벌레·귀신 소문 등도 위험도 계산에 반영됩니다.")
 
         reg_file = st.file_uploader(
-            "등기부등본 이미지 또는 PDF (선택)",
+            "등기부등본 PDF 또는 이미지 (선택)",
             type=["png", "jpg", "jpeg", "pdf"],
-            help="실제 서비스라면 등기부를 자동 인식해 소유자·근저당·가압류 등을 분석합니다.",
+            help="텍스트 기반 PDF는 간단 분석 가능, 이미지/스캔 등기부는 현재 OCR 미지원입니다.",
         )
 
         scan_clicked = st.button("위험도 스캔하기")
@@ -284,6 +398,7 @@ with main_tab:
             )
             st.session_state["score"] = score
             st.session_state["memo_issues"] = memo_issues
+
         elif st.session_state["deposit"] > 0 and st.session_state["score"] is None:
             s = st.session_state
             score, memo_issues = compute_risk_score(
@@ -291,6 +406,15 @@ with main_tab:
             )
             st.session_state["score"] = score
             st.session_state["memo_issues"] = memo_issues
+
+        # 등기부 분석 (업로드 시마다 시도)
+        if reg_file is not None:
+            st.caption("▶ 업로드한 등기부를 기반으로 **간단 자동 분석**을 시도합니다. (PDF 텍스트 위주)")
+            text = extract_text_from_registry_file(reg_file)
+            analysis = analyze_registry_text(text)
+            st.session_state["registry_analysis"] = analysis
+        else:
+            st.session_state["registry_analysis"] = None
 
     with right_col:
         st.header("2. 현재 조건 기준 위험도 요약")
@@ -335,7 +459,9 @@ with main_tab:
             st.markdown("**아래 지도는 입력한 주소를 기준으로 한 실제 지도 화면입니다.**")
             components.iframe(map_url, height=400)
 
-            lifestyle_comment = get_lifestyle_comment(address, noise_sensitive, hate_walking, night_active)
+            lifestyle_comment = get_lifestyle_comment(
+                address, noise_sensitive, hate_walking, night_active
+            )
             if lifestyle_comment:
                 st.markdown(lifestyle_comment)
 
@@ -345,29 +471,45 @@ with main_tab:
         else:
             st.caption("주소를 입력하면, 해당 주소 기준 실제 지도와 주변 지하철·편의점·공원·큰 도로 정보를 요약해서 보여줍니다.")
 
-        # 등기부 해석
-        st.subheader("등기부등본 자동 해석 (예시)")
-        if reg_file is not None:
-            if getattr(reg_file, "type", "").startswith("image/"):
-                st.image(reg_file, caption="업로드한 등기부등본 (예시)", use_column_width=True)
-            else:
-                st.caption("PDF 형식 등기부가 업로드되었습니다. (데모 버전이라 실제 내용은 분석하지 않습니다.)")
+        # 등기부 자동 해석 결과
+        st.subheader("등기부등본 자동 해석 (실험버전)")
 
-            explain = (
-                "- 현재 버전은 데모라 등기부 내용을 실제로 읽지는 않습니다.\n"
-                "- 실제 서비스라면 다음 정보를 자동으로 뽑아서 보여줍니다:\n"
-                "  - 소유자 이름, 공유 지분 여부\n"
-                "  - 근저당권(은행명, 채권최고액, 설정일, 순위)\n"
-                "  - 가압류·가처분 등 권리관계\n"
-                "  - 세입자 입장에서 위험한 조합(선순위 근저당 과도, 다수의 가압류 등)"
-            )
-            st.markdown(explain)
+        analysis = st.session_state.get("registry_analysis")
+        if analysis is None:
+            st.caption("등기부를 업로드하면 여기에서 근저당·가압류 등 간단한 위험 신호를 분석해 줍니다.")
         else:
-            st.caption("등기부등본을 올리면 여기에서 권리관계 요약(예시)을 보여주는 화면입니다.")
+            if not analysis["raw_text"]:
+                st.error(
+                    "등기부 텍스트를 추출하지 못했습니다. 스캔 이미지이거나, PDF 구조가 특이할 수 있어요.\n"
+                    "텍스트 기반 PDF인지 확인해 주세요."
+                )
+            else:
+                st.markdown("**① 자동 요약**")
+                st.write(f"- 근저당권 개수(텍스트 기준): {analysis['mortgage_count']}건")
+                if analysis["mortgage_total"] > 0:
+                    st.write(
+                        f"- 채권최고액 합계(대략): 약 {analysis['mortgage_total']:,}원 (실제 매매가·보증금과 비교 필요)"
+                    )
+                else:
+                    st.write("- 채권최고액 패턴을 명확히 찾지 못했습니다.")
+
+                if analysis["owner_lines"]:
+                    st.write("- 소유자 관련 라인(원문 일부):")
+                    for line in analysis["owner_lines"]:
+                        st.code(line)
+                else:
+                    st.write("- '소유자/소유권'이 들어간 줄을 찾지 못했습니다. (서식에 따라 다를 수 있음)")
+
+                st.markdown("**② 위험 신호 요약 (참고용)**")
+                for w in analysis["warnings"]:
+                    st.write("- " + w)
+
+                with st.expander("등기부 텍스트 일부 보기 (디버그용)"):
+                    st.text(analysis["preview"])
 
         st.caption(
-            "※ 깡통체크는 교육용 도구이며, 실제 법률 자문·신고는 "
-            "한국법률구조공단·HUG·지자체 주거 상담 창구 등과 꼭 상의해야 합니다."
+            "※ 깡통체크의 등기부 분석은 단순한 패턴 매칭에 기반한 교육용 기능입니다.\n"
+            "   실제 계약 전에는 반드시 공인중개사·법률 전문가와 등기부 원문을 함께 검토해야 합니다."
         )
 
 # ---------------- 계약 전 체크리스트 탭 ----------------
@@ -468,12 +610,17 @@ with tab_review:
         with st.form("review_form"):
             nickname = st.text_input("닉네임 (선택)", placeholder="예) 전세살이 2년차")
             period = st.selectbox(
-                "실제 거주 기간 (대략)",
-                ["6개월 미만", "6개월~1년", "1~2년", "2년 이상"],
+                "실제 거주 기간 (대략)", ["6개월 미만", "6개월~1년", "1~2년", "2년 이상"]
             )
             rating = st.slider("별점 (1~5)", min_value=1, max_value=5, value=4)
-            pros = st.text_area("좋았던 점", height=80, placeholder="예) 역이 가깝고 채광이 좋아요.")
-            cons = st.text_area("아쉬웠던 점 / 주의할 점", height=80, placeholder="예) 층간소음이 심해서 밤에 시끄러웠어요.")
+            pros = st.text_area(
+                "좋았던 점", height=80, placeholder="예) 역이 가깝고 채광이 좋아요."
+            )
+            cons = st.text_area(
+                "아쉬웠던 점 / 주의할 점",
+                height=80,
+                placeholder="예) 층간소음이 심해서 밤에 시끄러웠어요.",
+            )
             noise_issue = st.checkbox("소음이 신경 쓰였어요")
             bug_issue = st.checkbox("벌레가 자주 나왔어요")
             mold_issue = st.checkbox("곰팡이/누수 문제 있었어요")
