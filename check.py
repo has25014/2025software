@@ -10,17 +10,15 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# 간단한 스타일 커스터마이징 (배경/카드 디자인)
+# 스타일 (CSS)
 # ---------------------------------------------------------
 CUSTOM_CSS = """
 <style>
-    /* 전체 배경 */
     .stApp {
         background: radial-gradient(circle at top, #1f2937 0, #020617 55%, #020617 100%);
         color: #e5e7eb;
         font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
     }
-    /* 카드처럼 보이는 컨테이너용 */
     .card {
         background: radial-gradient(circle at top left,#111827 0,#020617 55%,#020617 100%);
         border-radius: 18px;
@@ -28,7 +26,6 @@ CUSTOM_CSS = """
         box-shadow: 0 18px 42px rgba(15,23,42,0.8);
         padding: 18px 20px 20px;
     }
-    /* 상단 라인 */
     .header-row {
         display: flex;
         justify-content: space-between;
@@ -94,8 +91,6 @@ CUSTOM_CSS = """
         width:7px;height:7px;border-radius:999px;
         background:#4ade80;box-shadow:0 0 8px #22c55e;
     }
-
-    /* 위험도 점수 스타일 */
     .risk-score {
         font-size: 32px;
         font-weight: 700;
@@ -126,7 +121,6 @@ CUSTOM_CSS = """
         transform:translate(-50%,-50%);
         box-shadow:0 0 12px rgba(255,255,255,.9);
     }
-
     .chip-row {
         display:flex;
         flex-wrap:wrap;
@@ -165,13 +159,11 @@ CUSTOM_CSS = """
     .risk-dot.safe { background:#22c55e; }
     .risk-dot.warn { background:#facc15; }
     .risk-dot.danger { background:#f97373; }
-
     .small-label {
         font-size:11px;
         color:#9ca3af;
         margin-bottom:4px;
     }
-
     .contact-box {
         font-size:11px;
         padding:9px 11px;
@@ -179,7 +171,6 @@ CUSTOM_CSS = """
         border:1px dashed rgba(148,163,184,.7);
         background:rgba(15,23,42,.88);
     }
-
     @media (max-width: 768px) {
         .header-row {
             flex-direction: column;
@@ -191,7 +182,7 @@ CUSTOM_CSS = """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 세션 상태 기본값 세팅 (샘플 버튼용)
+# 세션 기본값
 # ---------------------------------------------------------
 default_sample = {
     "address": "서울시 ○○구 ○○로 123, 302호",
@@ -201,12 +192,11 @@ default_sample = {
     "tenant_type": "학생·청년",
     "memo": "부동산에서 신축이라고 설명했지만, 주변 시세보다 약간 비싼 편이라고 함."
 }
-
 for key, val in default_sample.items():
     st.session_state.setdefault(key, "" if key in ["address", "memo"] else 0)
 
 # ---------------------------------------------------------
-# 상단 헤더
+# 헤더
 # ---------------------------------------------------------
 st.markdown(
     """
@@ -226,24 +216,17 @@ st.markdown(
 """,
     unsafe_allow_html=True,
 )
-
 st.caption("※ 실제 부동산·법률 서비스를 대신하지 않으며, 전세사기를 예방하기 위한 교육용 프로토타입입니다.")
-
-st.write("")  # 여백
+st.write("")
 
 # ---------------------------------------------------------
-# 위험도 계산 함수 (간단한 모형)
+# 위험도 계산 함수
 # ---------------------------------------------------------
 def compute_risk_score(deposit, rent, contract_type):
-    """
-    실제 데이터가 아니라, '보증금이 높을수록/전세에 가까울수록 위험도가 높다'는
-    단순한 가정으로 점수를 만들어주는 함수.
-    """
+    """보증금이 클수록, 전세에 가까울수록 위험도가 높다고 가정한 간단 모형"""
     if deposit <= 0:
         return 0
-
-    base = 40  # 기본 점수
-    # 보증금 크기에 따른 가산
+    base = 40
     if deposit < 2000:
         base += 0
     elif deposit < 5000:
@@ -253,22 +236,19 @@ def compute_risk_score(deposit, rent, contract_type):
     else:
         base += 45
 
-    # 계약 형태
     if contract_type == "전세":
         base += 10
     elif contract_type == "반전세":
         base += 5
 
-    # 월세가 거의 없는 경우(전세에 가까움) 조금 더 위험하다고 가정
     if rent <= 5:
         base += 5
 
-    # 점수 범위 (0~100)
     return max(0, min(100, base))
 
 
 def risk_color_and_label(score: int):
-    """점수에 따라 색/라벨/설명 텍스트를 나누는 함수"""
+    """점수에 따라 라벨·색상·설명 나누기"""
     if score < 45:
         level = "비교적 안전"
         color_class = "safe"
@@ -295,9 +275,8 @@ def risk_color_and_label(score: int):
         pos = 82
     return level, color_class, caption, pos
 
-
 # ---------------------------------------------------------
-# 상단: 입력 영역 + 결과 영역 (두 컬럼)
+# 상단: 입력 + 결과 컬럼
 # ---------------------------------------------------------
 col_input, col_result = st.columns([1.15, 1])
 
@@ -305,20 +284,17 @@ with col_input:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("보증금 스캔 입력")
     st.markdown(
-        "<p style='font-size:12px;color:#9ca3af;'>"
-        "주소와 계약 조건을 입력하면, 전·월세 보증금이 어느 정도 위험한지 한 번에 확인할 수 있습니다."
-        "</p>",
+        "<p style='font-size:12px;color:#9ca3af;'>주소와 계약 조건을 입력하면, 전·월세 보증금이 어느 정도 위험한지 한 번에 확인할 수 있습니다.</p>",
         unsafe_allow_html=True,
     )
 
-    # 샘플 불러오기 버튼
+    # 샘플 버튼 (rerun 없이도 동작하도록, state만 세팅)
     if st.button("샘플 매물 불러오기"):
         for key, val in default_sample.items():
             st.session_state[key] = val
-        st.experimental_rerun()
 
-    # 입력 폼
     address = st.text_input("집 주소", key="address", placeholder="예) 서울시 ○○구 ○○로 123, 302호")
+
     c1, c2 = st.columns(2)
     with c1:
         deposit = st.number_input("보증금 (만원)", key="deposit", min_value=0, step=100)
@@ -348,7 +324,6 @@ with col_input:
     )
 
     scan_clicked = st.button("위험도 스캔하기", type="primary")
-
     st.markdown("</div>", unsafe_allow_html=True)
 
 with col_result:
@@ -358,13 +333,11 @@ with col_result:
     if scan_clicked and deposit > 0:
         score = compute_risk_score(deposit, rent, contract_type)
     elif deposit > 0:
-        # 처음 로드할 때도 값이 있으면 자동 계산
         score = compute_risk_score(deposit, rent, contract_type)
     else:
         score = None
 
     if score is None:
-        # 아직 스캔 안 했을 때
         st.markdown(
             """
             <div class="risk-badge">
@@ -374,20 +347,17 @@ with col_result:
             """,
             unsafe_allow_html=True,
         )
-        st.markdown('<div class="risk-score">--점</div>', unsafe_allow_html=True)
-        st.markdown('<div class="risk-label">전·월세 위험도 미계산</div>', unsafe_allow_html=True)
+        st.markdown("<div class='risk-score'>--점</div>", unsafe_allow_html=True)
+        st.markdown("<div class='risk-label'>전·월세 위험도 미계산</div>", unsafe_allow_html=True)
         st.markdown(
-            '<div class="risk-bar"><div class="risk-cursor" style="left:10%;"></div></div>',
+            "<div class='risk-bar'><div class='risk-cursor' style='left:10%;'></div></div>",
             unsafe_allow_html=True,
         )
         st.markdown(
-            "<p style='font-size:11px;color:#9ca3af;'>왼쪽에 조건을 입력하고 "
-            "<strong>위험도 스캔하기</strong> 버튼을 누르면 여기에 깡통 전세 및 보증금 회수 위험도가 표시됩니다.</p>",
+            "<p style='font-size:11px;color:#9ca3af;'>왼쪽에 조건을 입력하고 <strong>위험도 스캔하기</strong> 버튼을 누르면 여기에서 결과가 표시됩니다.</p>",
             unsafe_allow_html=True,
         )
-        st.markdown(
-            "<p class='small-label'>핵심 요약 지표</p>", unsafe_allow_html=True
-        )
+        st.markdown("<p class='small-label'>핵심 요약 지표</p>", unsafe_allow_html=True)
         st.markdown(
             """
             <div class="chip-row">
@@ -398,11 +368,8 @@ with col_result:
             """,
             unsafe_allow_html=True,
         )
-
     else:
-        # 점수 계산된 상태
         level, color_class, caption, pos = risk_color_and_label(score)
-
         st.markdown(
             f"""
             <div class="risk-badge">
@@ -413,20 +380,16 @@ with col_result:
             unsafe_allow_html=True,
         )
         st.markdown(f"<div class='risk-score'>{score}점</div>", unsafe_allow_html=True)
-        st.markdown(
-            f"<div class='risk-label'>전·월세 위험도: {level}</div>", unsafe_allow_html=True
-        )
+        st.markdown(f"<div class='risk-label'>전·월세 위험도: {level}</div>", unsafe_allow_html=True)
         st.markdown(
             f"<div class='risk-bar'><div class='risk-cursor' style='left:{pos}%;'></div></div>",
             unsafe_allow_html=True,
         )
-
         st.markdown(
             f"<p style='font-size:11px;color:#9ca3af;'>{caption}</p>",
             unsafe_allow_html=True,
         )
 
-        # 간단한 요약 지표 (모두 가짜값, 예시용)
         st.markdown("<p class='small-label'>핵심 요약 지표</p>", unsafe_allow_html=True)
         est_ratio = min(110, score + 5)
         st.markdown(
@@ -440,7 +403,6 @@ with col_result:
             unsafe_allow_html=True,
         )
 
-    # 항상 보여주는 안내 박스
     st.markdown(
         """
         <div class="contact-box">
@@ -451,17 +413,14 @@ with col_result:
         """,
         unsafe_allow_html=True,
     )
-
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 추가 기능 섹션 (시뮬레이션, 체크리스트, 분쟁 대응, 공유 등)
+# 아래 탭: 상세 분석 / 체크리스트 / 분쟁 대응 / 공유 / 시뮬레이션
 # ---------------------------------------------------------
-
 st.write("")
 st.markdown("### 추가 기능 · 세부 화면")
 
-# 탭 구성
 tab_analysis, tab_checklist, tab_after, tab_share, tab_sim = st.tabs(
     ["상세 분석", "계약 전 체크리스트", "분쟁 발생 시 대응", "가족·공동세입자 공유", "조건 시뮬레이션"]
 )
@@ -476,7 +435,6 @@ with tab_analysis:
         """
     )
     easy_mode = st.checkbox("어려운 용어를 쉬운 말로 보기", value=True)
-
     if easy_mode:
         st.info(
             "👉 **쉬운 말 버전**\n\n"
@@ -494,7 +452,6 @@ with tab_analysis:
 
 with tab_checklist:
     st.markdown("#### ✅ 계약 전 체크리스트")
-    st.write("전·월세 계약을 하기 전에, 최소한 아래 단계는 꼭 확인한다고 가정합니다.")
     st.markdown(
         """
         1. **집주인 실명 확인**  
@@ -512,7 +469,6 @@ with tab_checklist:
 
 with tab_after:
     st.markdown("#### 🚨 분쟁 발생 시 대응 플로우")
-    st.write("보증금 반환이 지연되거나, 명백한 전세사기가 의심될 때의 예시 플로우입니다.")
     st.markdown(
         """
         1. **증거 수집**  
@@ -532,9 +488,6 @@ with tab_after:
 
 with tab_share:
     st.markdown("#### 👪 가족·공동세입자와 함께 보는 화면")
-    st.write("검토 중인 집 정보를 가족·룸메와 함께 보면서 의견을 나누는 상황을 가정한 디자인입니다.")
-
-    # 간단한 댓글 시뮬레이션 (세션에 저장)
     if "comments" not in st.session_state:
         st.session_state["comments"] = [
             ("엄마", "보증금이 조금 높은 편이라, 월세를 조정하는 게 좋을 것 같아."),
@@ -546,30 +499,24 @@ with tab_share:
         st.markdown(f"**{who}** : {text}")
 
     st.write("---")
-    st.write("✏️ 여기서 예시로 의견을 하나 더 적어볼 수 있어요. (실제 저장이 중요한 건 아니고, UX 느낌만 보여 주는 용도)")
     new_who = st.text_input("이름", value="", key="new_who")
     new_text = st.text_input("의견", value="", key="new_text")
     if st.button("의견 추가(예시)"):
         if new_who.strip() and new_text.strip():
             st.session_state["comments"].append((new_who.strip(), new_text.strip()))
-            st.experimental_rerun()
         else:
             st.info("이름과 의견을 모두 입력해 주세요.")
 
 with tab_sim:
     st.markdown("#### 🔍 조건 시뮬레이션")
-    st.write("보증금·월세를 바꿔 보면서, 위험도 점수가 어떻게 달라지는지 가볍게 살펴볼 수 있는 영역입니다.")
     sim_col1, sim_col2 = st.columns(2)
-
     with sim_col1:
-        sim_deposit = st.slider("가상의 보증금 (만원)", min_value=500, max_value=10000, step=500, value=default_sample["deposit"])
-        sim_rent = st.slider("가상의 월세 (만원)", min_value=0, max_value=100, step=5, value=default_sample["rent"])
+        sim_deposit = st.slider("가상의 보증금 (만원)", 500, 10000, default_sample["deposit"], 500)
+        sim_rent = st.slider("가상의 월세 (만원)", 0, 100, default_sample["rent"], 5)
         sim_type = st.selectbox("가상의 계약 형태", ["전세", "반전세", "월세"], index=1)
-
     with sim_col2:
         sim_score = compute_risk_score(sim_deposit, sim_rent, sim_type)
-        sim_level, sim_color, sim_caption, sim_pos = risk_color_and_label(sim_score)
-
+        sim_level, _, sim_caption, _ = risk_color_and_label(sim_score)
         st.markdown(f"**시뮬레이션 점수: {sim_score}점 · {sim_level}**")
         st.progress(sim_score / 100.0)
         st.markdown(
@@ -580,3 +527,4 @@ with tab_sim:
 
 st.write("")
 st.caption("© 2025 보증가드(가상 서비스) · 전세사기 예방 교육용 프로토타입")
+
