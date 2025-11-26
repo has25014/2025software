@@ -1,18 +1,19 @@
 import streamlit as st
 
-# ---------------------------------------------------------
+# ----------------------------------------
 # 기본 설정
-# ---------------------------------------------------------
+# ----------------------------------------
 st.set_page_config(
     page_title="보증가드 | 전·월세 보증금 위험도 스캔",
     page_icon="🏠",
     layout="wide",
 )
 
-# ---------------------------------------------------------
-# 스타일 (CSS)
-# ---------------------------------------------------------
-CUSTOM_CSS = """
+# ----------------------------------------
+# CSS (디자인용)
+# ----------------------------------------
+st.markdown(
+    """
 <style>
     .stApp {
         background: radial-gradient(circle at top, #1f2937 0, #020617 55%, #020617 100%);
@@ -178,26 +179,13 @@ CUSTOM_CSS = """
         }
     }
 </style>
-"""
-st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-# ---------------------------------------------------------
-# 세션 기본값
-# ---------------------------------------------------------
-default_sample = {
-    "address": "서울시 ○○구 ○○로 123, 302호",
-    "deposit": 5000,
-    "rent": 40,
-    "contract_type": "반전세",
-    "tenant_type": "학생·청년",
-    "memo": "부동산에서 신축이라고 설명했지만, 주변 시세보다 약간 비싼 편이라고 함."
-}
-for key, val in default_sample.items():
-    st.session_state.setdefault(key, "" if key in ["address", "memo"] else 0)
-
-# ---------------------------------------------------------
+# ----------------------------------------
 # 헤더
-# ---------------------------------------------------------
+# ----------------------------------------
 st.markdown(
     """
 <div class="header-row">
@@ -219,13 +207,14 @@ st.markdown(
 st.caption("※ 실제 부동산·법률 서비스를 대신하지 않으며, 전세사기를 예방하기 위한 교육용 프로토타입입니다.")
 st.write("")
 
-# ---------------------------------------------------------
+# ----------------------------------------
 # 위험도 계산 함수
-# ---------------------------------------------------------
+# ----------------------------------------
 def compute_risk_score(deposit, rent, contract_type):
     """보증금이 클수록, 전세에 가까울수록 위험도가 높다고 가정한 간단 모형"""
     if deposit <= 0:
         return 0
+
     base = 40
     if deposit < 2000:
         base += 0
@@ -248,7 +237,7 @@ def compute_risk_score(deposit, rent, contract_type):
 
 
 def risk_color_and_label(score: int):
-    """점수에 따라 라벨·색상·설명 나누기"""
+    """점수에 따라 라벨/색상/설명/바 위치 나누기"""
     if score < 45:
         level = "비교적 안전"
         color_class = "safe"
@@ -275,9 +264,9 @@ def risk_color_and_label(score: int):
         pos = 82
     return level, color_class, caption, pos
 
-# ---------------------------------------------------------
-# 상단: 입력 + 결과 컬럼
-# ---------------------------------------------------------
+# ----------------------------------------
+# 상단: 입력 + 결과
+# ----------------------------------------
 col_input, col_result = st.columns([1.15, 1])
 
 with col_input:
@@ -288,32 +277,25 @@ with col_input:
         unsafe_allow_html=True,
     )
 
-    # 샘플 버튼 (rerun 없이도 동작하도록, state만 세팅)
-    if st.button("샘플 매물 불러오기"):
-        for key, val in default_sample.items():
-            st.session_state[key] = val
-
-    address = st.text_input("집 주소", key="address", placeholder="예) 서울시 ○○구 ○○로 123, 302호")
+    address = st.text_input("집 주소", placeholder="예) 서울시 ○○구 ○○로 123, 302호")
 
     c1, c2 = st.columns(2)
     with c1:
-        deposit = st.number_input("보증금 (만원)", key="deposit", min_value=0, step=100)
+        deposit = st.number_input("보증금 (만원)", min_value=0, step=100)
     with c2:
-        rent = st.number_input("월세 (만원)", key="rent", min_value=0, step=5)
+        rent = st.number_input("월세 (만원)", min_value=0, step=5)
 
     c3, c4 = st.columns(2)
     with c3:
-        contract_type = st.selectbox("계약 형태", ["전세", "반전세", "월세"], key="contract_type")
+        contract_type = st.selectbox("계약 형태", ["전세", "반전세", "월세"])
     with c4:
         tenant_type = st.selectbox(
             "세입자 유형",
             ["학생·청년", "1인 가구", "가족 세대", "외국인 세입자"],
-            key="tenant_type",
         )
 
     memo = st.text_area(
         "메모 (선택)",
-        key="memo",
         placeholder="부동산에서 들은 조건이나 특이사항을 간단히 적어 두세요.",
         height=60,
     )
@@ -323,7 +305,7 @@ with col_input:
         unsafe_allow_html=True,
     )
 
-    scan_clicked = st.button("위험도 스캔하기", type="primary")
+    scan_clicked = st.button("위험도 스캔하기")
     st.markdown("</div>", unsafe_allow_html=True)
 
 with col_result:
@@ -415,9 +397,9 @@ with col_result:
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------------------------------------------------
-# 아래 탭: 상세 분석 / 체크리스트 / 분쟁 대응 / 공유 / 시뮬레이션
-# ---------------------------------------------------------
+# ----------------------------------------
+# 아래 탭들 (추가 기능 설명만)
+# ----------------------------------------
 st.write("")
 st.markdown("### 추가 기능 · 세부 화면")
 
@@ -487,33 +469,18 @@ with tab_after:
     )
 
 with tab_share:
-    st.markdown("#### 👪 가족·공동세입자와 함께 보는 화면")
-    if "comments" not in st.session_state:
-        st.session_state["comments"] = [
-            ("엄마", "보증금이 조금 높은 편이라, 월세를 조정하는 게 좋을 것 같아."),
-            ("나린", "회사까지 20분이면 출퇴근은 괜찮을 듯! 대신 보증보험은 꼭 들어야겠어."),
-            ("룸메", "층간소음이 심한지 실제로 가서 한 번 들어보고 결정하자."),
-        ]
-
-    for who, text in st.session_state["comments"]:
-        st.markdown(f"**{who}** : {text}")
-
-    st.write("---")
-    new_who = st.text_input("이름", value="", key="new_who")
-    new_text = st.text_input("의견", value="", key="new_text")
-    if st.button("의견 추가(예시)"):
-        if new_who.strip() and new_text.strip():
-            st.session_state["comments"].append((new_who.strip(), new_text.strip()))
-        else:
-            st.info("이름과 의견을 모두 입력해 주세요.")
+    st.markdown("#### 👪 가족·공동세입자와 함께 보는 화면 (예시)")
+    st.markdown("**엄마** : 보증금이 조금 높은 편이라, 월세를 조정하는 게 좋을 것 같아.")
+    st.markdown("**나린** : 회사까지 20분이면 출퇴근은 괜찮을 듯! 대신 보증보험은 꼭 들어야겠어.")
+    st.markdown("**룸메** : 층간소음이 심한지 실제로 가서 한 번 들어보고 결정하자.")
 
 with tab_sim:
-    st.markdown("#### 🔍 조건 시뮬레이션")
+    st.markdown("#### 🔍 조건 시뮬레이션 (가상)")
     sim_col1, sim_col2 = st.columns(2)
     with sim_col1:
-        sim_deposit = st.slider("가상의 보증금 (만원)", 500, 10000, default_sample["deposit"], 500)
-        sim_rent = st.slider("가상의 월세 (만원)", 0, 100, default_sample["rent"], 5)
-        sim_type = st.selectbox("가상의 계약 형태", ["전세", "반전세", "월세"], index=1)
+        sim_deposit = st.slider("가상의 보증금 (만원)", 500, 10000, 5000, 500)
+        sim_rent = st.slider("가상의 월세 (만원)", 0, 100, 40, 5)
+        sim_type = st.selectbox("가상의 계약 형태", ["전세", "반전세", "월세"])
     with sim_col2:
         sim_score = compute_risk_score(sim_deposit, sim_rent, sim_type)
         sim_level, _, sim_caption, _ = risk_color_and_label(sim_score)
@@ -527,4 +494,3 @@ with tab_sim:
 
 st.write("")
 st.caption("© 2025 보증가드(가상 서비스) · 전세사기 예방 교육용 프로토타입")
-
