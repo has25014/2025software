@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import urllib.parse
+import streamlit.components.v1 as components
 
 # ----------------------------------------
 # Functions
@@ -72,47 +74,19 @@ def get_transit_summary_text(address: str) -> str:
     lines = []
     if "은평" in addr:
         lines.append("**예시) 서울 은평구 기준 주변 교통**")
-        lines.append("- 지하철: 3호선 구파발역 도보 약 7분 (예시)")
-        lines.append("- 버스: 통일로 ○○ 정류장 도보 약 3분, 버스 노선 다수 (예시)")
-        lines.append("- 도로: 내부순환로·통일로 진입이 가까워 자가용 이동이 편리한 편 (예시)")
+        lines.append("- 지하철: 3호선 구파발역이 비교적 가까운 편입니다.")
+        lines.append("- 버스: 통일로 주변으로 다양한 버스 노선이 있습니다.")
+        lines.append("- 도로: 내부순환로·통일로 진입이 비교적 쉬운 편입니다.")
     elif ("강남" in addr) or ("서초" in addr):
         lines.append("**예시) 강남권 기준 주변 교통**")
-        lines.append("- 지하철: 2호선/신분당선 환승역까지 도보 5~10분 (예시)")
-        lines.append("- 버스: 간선·광역·심야버스 다수 운행 (예시)")
-        lines.append("- 도로: 경부고속도로, 올림픽대로 진입이 쉬운 편 (예시)")
+        lines.append("- 지하철: 2호선/신분당선 환승역이 인근에 있을 가능성이 높습니다.")
+        lines.append("- 버스: 간선·광역·심야버스가 많이 지나는 지역일 수 있어요.")
+        lines.append("- 도로: 경부고속도로, 올림픽대로 등 주요 도로와의 접근성이 좋은 편일 수 있습니다.")
     else:
-        lines.append("**입력한 주소 기준 주변 교통 정보 (예시)**")
+        lines.append("**입력한 주소 기준 주변 교통 안내 (개략)**")
         lines.append("- 실제 서비스에서는 지도 API로 가장 가까운 지하철역·버스정류장·고속도로 IC를 계산합니다.")
-        lines.append("- 역까지 도보 시간, 버스 정류장까지 거리, 주요 도로 접근성 등을 숫자로 보여주는 걸 목표로 합니다.")
-    lines.append("")
-    lines.append("※ 현재 버전은 구조 시연용이며, 실제 교통 정보는 아닙니다.")
+        lines.append("- 역까지 도보 시간, 버스 정류장까지 거리, 주요 도로 접근성 등을 숫자로 보여주는 것을 목표로 합니다.")
     return "\n".join(lines)
-
-
-def get_mock_geo_and_pois(address: str):
-    addr = (address or "").strip()
-    if not addr:
-        return None, []
-    center = (37.5665, 126.9780)
-    pois = [
-        {"name": "지하철역(예시)", "type": "지하철역", "lat": 37.5655, "lon": 126.9770, "info": "도보 약 8분 (예시)"},
-        {"name": "버스 정류장(예시)", "type": "버스정류장", "lat": 37.5670, "lon": 126.9790, "info": "도보 약 3분 (예시)"},
-    ]
-    if "은평" in addr:
-        center = (37.6360, 126.9180)
-        pois = [
-            {"name": "구파발역(3호선)", "type": "지하철역", "lat": 37.6365, "lon": 126.9185, "info": "도보 약 7분 (예시)"},
-            {"name": "통일로 ○○ 버스정류장", "type": "버스정류장", "lat": 37.6350, "lon": 126.9190, "info": "도보 약 3분 (예시)"},
-            {"name": "내부순환로 진입로", "type": "도로·IC", "lat": 37.6370, "lon": 126.9155, "info": "차량 약 3~5분 (예시)"},
-        ]
-    elif ("강남" in addr) or ("서초" in addr):
-        center = (37.4980, 127.0276)
-        pois = [
-            {"name": "강남역(2호선·신분당선)", "type": "지하철역", "lat": 37.4980, "lon": 127.0270, "info": "도보 약 5~10분 (예시)"},
-            {"name": "강남역 사거리 버스정류장", "type": "버스정류장", "lat": 37.4970, "lon": 127.0260, "info": "도보 약 3분 (예시)"},
-            {"name": "경부고속도로 IC", "type": "도로·IC", "lat": 37.4930, "lon": 127.0250, "info": "차량 약 7~10분 (예시)"},
-        ]
-    return center, pois
 
 
 def get_lifestyle_comment(address: str, noise_sensitive: bool, hate_walking: bool, night_active: bool) -> str:
@@ -227,41 +201,28 @@ with right_col:
         else:
             st.write("메모에서 특별한 위험 키워드는 감지되지 않았어요.")
 
-    st.subheader("주변 교통 요약 (예시)")
+    # --------- 주변 교통 + 실제 지도 ---------
+    st.subheader("주변 교통·지도")
+
     if address:
+        # 간단 텍스트 요약
         st.markdown(get_transit_summary_text(address))
+
+        # 입력한 주소로 실제 지도 임베드 (Google Maps)
+        encoded_addr = urllib.parse.quote(address)
+        map_url = f"https://www.google.com/maps?q={encoded_addr}&output=embed"
+
+        st.markdown("**아래 지도는 입력한 주소를 기준으로 한 실제 지도 화면입니다.**")
+        components.iframe(map_url, height=400)
+
+        # 생활 패턴 코멘트
         lifestyle_comment = get_lifestyle_comment(address, noise_sensitive, hate_walking, night_active)
         if lifestyle_comment:
             st.markdown(lifestyle_comment)
-
-        center, pois = get_mock_geo_and_pois(address)
-        if center is not None:
-            st.caption("아래 지도는 집과 주변 역/버스/도로 위치를 **예시로** 보여줍니다. (실제 위치 아님)")
-            data = [
-                {
-                    "name": "집(예시)",
-                    "lat": center[0],
-                    "lon": center[1],
-                    "type": "집",
-                    "info": "입력한 주소를 기준으로 한 예시 위치",
-                }
-            ]
-            for p in pois:
-                data.append(
-                    {
-                        "name": p["name"],
-                        "lat": p["lat"],
-                        "lon": p["lon"],
-                        "type": p["type"],
-                        "info": p["info"],
-                    }
-                )
-            df_map = pd.DataFrame(data)
-            st.map(df_map[["lat", "lon"]], zoom=14)
-            st.table(df_map[["name", "type", "info"]])
     else:
-        st.caption("주소를 입력하면, 이 자리에서 주변 지하철·버스·도로 접근성 요약과 예시 지도 정보를 보여줍니다.")
+        st.caption("주소를 입력하면, 해당 주소 기준 실제 지도를 아래에 표시해 줍니다.")
 
+    # --------- 등기부 해석 ---------
     st.subheader("등기부등본 자동 해석 (예시)")
     if reg_file is not None:
         if getattr(reg_file, "type", "").startswith("image/"):
@@ -293,7 +254,7 @@ tab_check, tab_review, tab_after, tab_share, tab_sim = st.tabs(
     ["계약 전 체크리스트", "집 후기", "분쟁 발생 시 대응", "부모님과 결과 공유", "조건 시뮬레이션"]
 )
 
-# 체크리스트 탭
+# ---------------- 체크리스트 탭 ----------------
 with tab_check:
     st.subheader("계약 전 체크리스트")
     st.caption(
@@ -347,9 +308,10 @@ with tab_check:
         "앱을 새로 고쳐도 같은 브라우저 세션에서 다시 열면 상태가 유지돼요."
     )
 
-# 집 후기 탭
+# ---------------- 집 후기 탭 ----------------
 with tab_review:
     st.subheader("집 후기 (세입자 경험 공유)")
+
     if "reviews" not in st.session_state:
         st.session_state["reviews"] = {}
 
@@ -358,7 +320,6 @@ with tab_review:
     if not addr_key:
         st.info("먼저 위에서 **주소를 입력**하면, 해당 주소 기준으로 후기를 남기고 볼 수 있어요.")
     else:
-        # 기존 후기 목록
         reviews = st.session_state["reviews"].get(addr_key, [])
         st.markdown(f"**현재 이 주소에 등록된 후기: {len(reviews)}개**")
 
@@ -388,7 +349,7 @@ with tab_review:
         st.markdown("---")
         st.markdown("### 새 후기 남기기")
 
-        with st.form(key="review_form"):
+        with st.form("review_form"):
             nickname = st.text_input("닉네임 (선택)", placeholder="예) 전세살이 2년차")
             period = st.selectbox(
                 "실제 거주 기간 (대략)",
@@ -422,7 +383,7 @@ with tab_review:
             st.session_state["reviews"][addr_key] = all_reviews
             st.success("후기가 저장되었습니다. 위 목록에서 방금 남긴 후기를 확인할 수 있어요.")
 
-# 사후 대응 탭
+# ---------------- 사후 대응 탭 ----------------
 with tab_after:
     st.subheader("분쟁(보증금 미반환·전세사기 의심) 발생 시 대응 플로우")
 
@@ -452,11 +413,11 @@ with tab_after:
     )
     st.markdown(after_text)
 
-# 부모님과 공유 탭
+# ---------------- 부모님과 공유 탭 ----------------
 with tab_share:
     st.subheader("부모님과 결과 공유")
 
-    if 'score' not in locals() or score is None or deposit <= 0:
+    if "score" not in locals() or score is None or deposit <= 0:
         st.write("먼저 위쪽에서 주소·보증금 등을 입력하고 **'위험도 스캔하기'** 버튼을 눌러 주세요.")
     else:
         level, msg = risk_label(score)
@@ -503,7 +464,7 @@ with tab_share:
             "  - 혹시 더 안전한 매물이 있는지, 중개사에게 무엇을 더 물어봐야 할지"
         )
 
-# 시뮬레이션 탭
+# ---------------- 시뮬레이션 탭 ----------------
 with tab_sim:
     st.subheader("조건 시뮬레이션")
 
