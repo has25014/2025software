@@ -119,6 +119,45 @@ def get_lifestyle_comment(address: str, noise_sensitive: bool, hate_walking: boo
     return "\n".join(lines)
 
 
+def get_poi_summary_text(address: str) -> str:
+    """주소를 기반으로 주변 지하철/편의점/공원/큰 도로 정보를 요약(예시)"""
+    addr = (address or "").strip()
+    if not addr:
+        return ""
+    lines = []
+    # 서울 마곡/서울식물원 근처 느낌
+    if ("마곡" in addr) or ("서울식물원" in addr) or ("강서구" in addr):
+        lines.append("**주변 편의·교통·공원 정보 (예시)**")
+        lines.append("- 지하철: 마곡나루역·마곡역·양천향교역 중 한 곳이 도보/버스로 접근 가능한 생활권일 수 있어요.")
+        lines.append("- 편의점: 마곡지구 내 GS25·CU·이마트24 등 편의점이 도보 3~5분 거리에 여러 곳 있을 가능성이 높아요.")
+        lines.append("- 공원·녹지: 서울식물원, 한강 방화대교 주변 수변공원 등이 가깝다는 장점이 있어요.")
+        lines.append("- 큰 도로·고속도로: 올림픽대로, 방화대교·가양대교 진입이 가까워 차량 이동은 편하지만, 교통량에 따른 소음은 체크가 필요해요.")
+    # 은평/구파발/연신내 근처 느낌
+    elif ("은평" in addr) or ("구파발" in addr) or ("연신내" in addr):
+        lines.append("**주변 편의·교통·공원 정보 (예시)**")
+        lines.append("- 지하철: 3호선 구파발역·연신내역 등으로 출퇴근하는 생활권일 가능성이 높아요.")
+        lines.append("- 편의점: 역세권과 주거지 사이에 편의점·카페·프랜차이즈 음식점이 밀집된 구간이 많아요.")
+        lines.append("- 공원·녹지: 북한산, 불광천 산책로 등 자연 접근성이 좋지만 산·하천 인접 여부에 따라 벌레·습도도 체크해야 해요.")
+        lines.append("- 큰 도로·고속도로: 통일로, 내부순환로 진입이 가까워 차량 소음과 매연도 함께 확인해보는 게 좋아요.")
+    # 강남/서초 근처 느낌
+    elif ("강남" in addr) or ("서초" in addr):
+        lines.append("**주변 편의·교통·공원 정보 (예시)**")
+        lines.append("- 지하철: 2호선·3호선·9호선·신분당선 등 여러 노선을 환승할 수 있는 역세권일 가능성이 높아요.")
+        lines.append("- 편의점: 블록마다 편의점·카페·프랜차이즈 음식점이 있을 정도로 생활 편의시설이 매우 풍부해요.")
+        lines.append("- 공원·녹지: 양재천, 탄천, 역삼·서초 일대 소규모 공원 등 산책 코스를 찾기 괜찮은 편이에요.")
+        lines.append("- 큰 도로·고속도로: 경부고속도로, 테헤란로, 남부순환로 등 대형 도로와 가깝다면 소음·매연이 강할 수 있어요.")
+    # 그 외는 개략 예시
+    else:
+        lines.append("**주변 편의·교통·공원 정보 (개략 예시)**")
+        lines.append("- 지하철/전철: 입력한 주소 주변의 가장 가까운 역까지 도보 시간·거리 정보를 지도 API로 계산해 보여줄 수 있어요.")
+        lines.append("- 편의점: GS25·CU·세븐일레븐·이마트24 등까지 도보 2~5분 거리인지 확인해, 생활 편의성을 점수화할 수 있어요.")
+        lines.append("- 공원·녹지: 동네 근린공원·하천 산책로·대형 공원(예: 서울숲, 서울식물원 등) 접근성을 함께 볼 수 있어요.")
+        lines.append("- 큰 도로·고속도로: 왕복 4차로 이상 도로·고속도로 IC까지 거리를 기준으로, 소음·매연 리스크를 평가할 수 있어요.")
+    lines.append("")
+    lines.append("※ 실제 서비스에서는 지도·장소 API를 활용해 역/편의점/공원/고속도로까지의 실제 거리를 계산해 줄 수 있습니다.")
+    return "\n".join(lines)
+
+
 # ----------------------------------------
 # Page config & title
 # ----------------------------------------
@@ -201,14 +240,14 @@ with right_col:
         else:
             st.write("메모에서 특별한 위험 키워드는 감지되지 않았어요.")
 
-    # --------- 주변 교통 + 실제 지도 ---------
-    st.subheader("주변 교통·지도")
+    # --------- 주변 교통 + 실제 지도 + POI 요약 ---------
+    st.subheader("주변 교통·지도·편의시설")
 
     if address:
-        # 간단 텍스트 요약
+        # 간단 교통 요약
         st.markdown(get_transit_summary_text(address))
 
-        # 입력한 주소로 실제 지도 임베드 (Google Maps)
+        # 실제 지도 임베드 (Google Maps)
         encoded_addr = urllib.parse.quote(address)
         map_url = f"https://www.google.com/maps?q={encoded_addr}&output=embed"
 
@@ -219,8 +258,13 @@ with right_col:
         lifestyle_comment = get_lifestyle_comment(address, noise_sensitive, hate_walking, night_active)
         if lifestyle_comment:
             st.markdown(lifestyle_comment)
+
+        # 주변 지하철/편의점/공원/큰 도로 요약
+        poi_summary = get_poi_summary_text(address)
+        if poi_summary:
+            st.markdown(poi_summary)
     else:
-        st.caption("주소를 입력하면, 해당 주소 기준 실제 지도를 아래에 표시해 줍니다.")
+        st.caption("주소를 입력하면, 해당 주소 기준 실제 지도와 주변 지하철·편의점·공원·큰 도로 정보를 요약해서 보여줍니다.")
 
     # --------- 등기부 해석 ---------
     st.subheader("등기부등본 자동 해석 (예시)")
