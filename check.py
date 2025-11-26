@@ -2,12 +2,13 @@ import streamlit as st
 import pandas as pd
 
 # ----------------------------------------
-# 위험도 계산 함수 등
+# Functions
 # ----------------------------------------
 def compute_risk_score(deposit, rent, contract_type, memo=""):
     if deposit <= 0:
         return 0, []
     score = 40
+    # 보증금 크기
     if deposit < 2000:
         score += 0
     elif deposit < 5000:
@@ -16,12 +17,15 @@ def compute_risk_score(deposit, rent, contract_type, memo=""):
         score += 30
     else:
         score += 45
+    # 계약 형태
     if contract_type == "전세":
         score += 10
     elif contract_type == "반전세":
         score += 5
+    # 월세 거의 없으면 (전세에 가까우면) 조금 더 위험
     if rent <= 5:
         score += 5
+    # 메모 키워드
     issues = []
     memo = memo or ""
     keywords = {
@@ -113,10 +117,9 @@ def get_mock_geo_and_pois(address: str):
 
 def get_lifestyle_comment(address: str, noise_sensitive: bool, hate_walking: bool, night_active: bool) -> str:
     addr = (address or "").strip()
-    lines = []
     if not addr:
         return ""
-    # 소음 예민
+    lines = []
     if noise_sensitive:
         if ("강남" in addr) or ("서초" in addr):
             lines.append("- 소음에 예민하다면, 강남권은 차량·버스·유동 인구가 많아서 밤에도 시끄러울 수 있어요.")
@@ -124,7 +127,6 @@ def get_lifestyle_comment(address: str, noise_sensitive: bool, hate_walking: boo
             lines.append("- 소음에 예민하다면, 통일로·내부순환로 차량 소음이 신경 쓰일 수 있어요.")
         else:
             lines.append("- 소음에 예민하다면, 큰 도로·역 바로 앞 매물은 한 번 더 야간 방문해보는 게 좋아요.")
-    # 걷기 싫어함
     if hate_walking:
         if "은평" in addr:
             lines.append("- 걷는 걸 싫어한다면, 구파발역 도보 7분 정도도 조금 멀게 느껴질 수 있어요.")
@@ -132,7 +134,6 @@ def get_lifestyle_comment(address: str, noise_sensitive: bool, hate_walking: boo
             lines.append("- 걷는 걸 싫어한다면, 환승통로가 긴 대형역 근처는 동선이 길게 느껴질 수 있어요.")
         else:
             lines.append("- 걷는 걸 싫어한다면, 지도에서 역·버스 정류장까지 도보 시간을 꼭 확인해 보세요.")
-    # 야행성
     if night_active:
         if ("강남" in addr) or ("서초" in addr):
             lines.append("- 야행성이라면, 강남권은 늦은 시간까지 편의시설은 많지만 그만큼 소음도 강할 수 있어요.")
@@ -145,7 +146,7 @@ def get_lifestyle_comment(address: str, noise_sensitive: bool, hate_walking: boo
 
 
 # ----------------------------------------
-# 페이지 설정
+# Page config & title
 # ----------------------------------------
 st.set_page_config(
     page_title="깡통체크 | 전·월세 보증금 위험도 스캔",
@@ -226,7 +227,6 @@ with right_col:
         else:
             st.write("메모에서 특별한 위험 키워드는 감지되지 않았어요.")
 
-    # 주변 교통 + 생활 패턴 코멘트
     st.subheader("주변 교통 요약 (예시)")
     if address:
         st.markdown(get_transit_summary_text(address))
@@ -262,7 +262,6 @@ with right_col:
     else:
         st.caption("주소를 입력하면, 이 자리에서 주변 지하철·버스·도로 접근성 요약과 예시 지도 정보를 보여줍니다.")
 
-    # 등기부 해석
     st.subheader("등기부등본 자동 해석 (예시)")
     if reg_file is not None:
         if getattr(reg_file, "type", "").startswith("image/"):
@@ -288,10 +287,10 @@ with right_col:
     )
 
 # ----------------------------------------
-# 하단 탭
+# 하단 탭들
 # ----------------------------------------
-tab_check, tab_after, tab_share, tab_sim = st.tabs(
-    ["계약 전 체크리스트", "분쟁 발생 시 대응", "부모님과 결과 공유", "조건 시뮬레이션"]
+tab_check, tab_review, tab_after, tab_share, tab_sim = st.tabs(
+    ["계약 전 체크리스트", "집 후기", "분쟁 발생 시 대응", "부모님과 결과 공유", "조건 시뮬레이션"]
 )
 
 # 체크리스트 탭
@@ -313,6 +312,7 @@ with tab_check:
     st.warning(warning_text)
 
     col1, col2 = st.columns(2)
+
     items_col1 = [
         ("chk_owner_match", "등기부등본으로 집주인 이름과 계약서 상 임대인이 같은 사람인지 확인하기"),
         ("chk_rights", "근저당·가압류·가처분이 과도하게 잡혀 있지 않은지 확인하기"),
@@ -323,6 +323,7 @@ with tab_check:
         ("chk_contract_copy", "계약서 사본과 특약 사항을 사진 또는 스캔으로 따로 보관하기"),
         ("chk_id_match", "임대인(또는 대리인)의 신분증과 등기부 상 소유자 정보가 일치하는지 확인하기"),
     ]
+
     items_col2 = [
         ("chk_defects", "벽·천장·창틀 곰팡이, 누수 자국, 균열, 바닥 울렁거림 등 하자 여부 체크하기"),
         ("chk_sun_dir", "해가 들어오는 방향(남향·동향·서향)과 채광, 겨울철 결로 가능성 확인하기"),
@@ -333,20 +334,98 @@ with tab_check:
         ("chk_safety", "공동현관 잠금장치, CCTV, 비상구, 소화기 등 기본 안전 설비 상태 확인하기"),
         ("chk_parking", "주차 공간이 필요한 경우, 실제로 주차 가능한지(세대 수 대비) 확인하기"),
     ]
+
     with col1:
         for key, label in items_col1:
             st.checkbox(label, key=key)
     with col2:
         for key, label in items_col2:
             st.checkbox(label, key=key)
+
     st.info(
         "💡 체크박스는 `key`를 기준으로 `st.session_state`에 저장돼서, "
         "앱을 새로 고쳐도 같은 브라우저 세션에서 다시 열면 상태가 유지돼요."
     )
 
+# 집 후기 탭
+with tab_review:
+    st.subheader("집 후기 (세입자 경험 공유)")
+    if "reviews" not in st.session_state:
+        st.session_state["reviews"] = {}
+
+    addr_key = (address or "").strip()
+
+    if not addr_key:
+        st.info("먼저 위에서 **주소를 입력**하면, 해당 주소 기준으로 후기를 남기고 볼 수 있어요.")
+    else:
+        # 기존 후기 목록
+        reviews = st.session_state["reviews"].get(addr_key, [])
+        st.markdown(f"**현재 이 주소에 등록된 후기: {len(reviews)}개**")
+
+        if reviews:
+            for i, r in enumerate(reviews):
+                header = f"후기 #{i+1} · {r.get('nickname', '익명')} · 별점 {r.get('rating', 0)}/5"
+                with st.expander(header):
+                    st.write("· 거주 기간:", r.get("period", ""))
+                    st.write("· 좋았던 점:", r.get("pros", ""))
+                    st.write("· 아쉬웠던 점 / 주의할 점:", r.get("cons", ""))
+                    flags = []
+                    if r.get("noise_issue"):
+                        flags.append("소음 심함")
+                    if r.get("bug_issue"):
+                        flags.append("벌레 자주 나옴")
+                    if r.get("mold_issue"):
+                        flags.append("곰팡이/누수 문제")
+                    if r.get("landlord_good"):
+                        flags.append("집주인 친절함")
+                    if r.get("landlord_bad"):
+                        flags.append("집주인/관리 응대 불친절")
+                    if flags:
+                        st.write("· 한 줄 요약 태그:", ", ".join(flags))
+        else:
+            st.write("아직 등록된 후기가 없습니다. 이 집에 살아본 적이 있다면 첫 후기를 남겨 주세요!")
+
+        st.markdown("---")
+        st.markdown("### 새 후기 남기기")
+
+        with st.form(key="review_form"):
+            nickname = st.text_input("닉네임 (선택)", placeholder="예) 전세살이 2년차")
+            period = st.selectbox(
+                "실제 거주 기간 (대략)",
+                ["6개월 미만", "6개월~1년", "1~2년", "2년 이상"],
+            )
+            rating = st.slider("별점 (1~5)", min_value=1, max_value=5, value=4)
+            pros = st.text_area("좋았던 점", height=80, placeholder="예) 역이 가깝고 채광이 좋아요.")
+            cons = st.text_area("아쉬웠던 점 / 주의할 점", height=80, placeholder="예) 층간소음이 심해서 밤에 시끄러웠어요.")
+            noise_issue = st.checkbox("소음이 신경 쓰였어요")
+            bug_issue = st.checkbox("벌레가 자주 나왔어요")
+            mold_issue = st.checkbox("곰팡이/누수 문제 있었어요")
+            landlord_good = st.checkbox("집주인이 비교적 친절했어요")
+            landlord_bad = st.checkbox("집주인/관리인 응대가 별로였어요")
+            submitted = st.form_submit_button("후기 등록하기")
+
+        if submitted:
+            new_r = {
+                "nickname": nickname or "익명",
+                "period": period,
+                "rating": rating,
+                "pros": pros,
+                "cons": cons,
+                "noise_issue": noise_issue,
+                "bug_issue": bug_issue,
+                "mold_issue": mold_issue,
+                "landlord_good": landlord_good,
+                "landlord_bad": landlord_bad,
+            }
+            all_reviews = st.session_state["reviews"].get(addr_key, [])
+            all_reviews.append(new_r)
+            st.session_state["reviews"][addr_key] = all_reviews
+            st.success("후기가 저장되었습니다. 위 목록에서 방금 남긴 후기를 확인할 수 있어요.")
+
 # 사후 대응 탭
 with tab_after:
     st.subheader("분쟁(보증금 미반환·전세사기 의심) 발생 시 대응 플로우")
+
     after_text = (
         "1️⃣ 증거 싹 모으기\n"
         "- 임대인과 주고받은 문자·카톡·메일, 통화 녹취, 계좌이체 내역, 계약서 원본 모두 보관하기\n"
@@ -373,14 +452,16 @@ with tab_after:
     )
     st.markdown(after_text)
 
-# 부모님 공유 탭
+# 부모님과 공유 탭
 with tab_share:
     st.subheader("부모님과 결과 공유")
+
     if 'score' not in locals() or score is None or deposit <= 0:
         st.write("먼저 위쪽에서 주소·보증금 등을 입력하고 **'위험도 스캔하기'** 버튼을 눌러 주세요.")
     else:
         level, msg = risk_label(score)
         issues_text = ", ".join(memo_issues) if memo_issues else "특이사항 없음"
+
         lifestyle_bits = []
         if noise_sensitive:
             lifestyle_bits.append("소음에 예민함")
@@ -409,10 +490,12 @@ with tab_share:
         lines.append("• 요약 코멘트: " + msg)
         lines.append("")
         lines.append("※ 이 결과는 실제 법률·부동산 자문이 아닌, 전세사기를 의식하게 도와주는 교육용 참고 자료입니다.")
+
         share_text = "\n".join(lines)
 
         st.caption("아래 내용을 복사해서 카톡/문자/메일 등으로 부모님께 보내면 좋아요.")
         st.text_area("부모님께 보내기용 요약", value=share_text, height=260)
+
         st.markdown(
             "- 부모님과 같이 볼 때 이런 점을 함께 이야기해 보세요.\n"
             "  - 이 보증금·월세 수준이 우리 집 형편에 맞는지\n"
@@ -423,11 +506,14 @@ with tab_share:
 # 시뮬레이션 탭
 with tab_sim:
     st.subheader("조건 시뮬레이션")
+
     s_deposit = st.slider("보증금 (만원)", min_value=500, max_value=10000, value=5000, step=500)
     s_rent = st.slider("월세 (만원)", min_value=0, max_value=100, value=40, step=5)
     s_type = st.selectbox("계약 형태(가정)", ["전세", "반전세", "월세"])
+
     sim_score, _ = compute_risk_score(s_deposit, s_rent, s_type, "")
     level, msg = risk_label(sim_score)
+
     st.markdown(f"**시뮬레이션 점수: {sim_score} / 100점 · {level}**")
     st.progress(sim_score / 100.0)
     st.caption("보증금·월세·계약 형태에 따라 위험도가 어떻게 바뀌는지 감각을 익히기 위한 기능입니다.")
