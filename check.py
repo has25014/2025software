@@ -172,133 +172,205 @@ st.caption("전·월세 보증금 위험도 스캔 & 초보 세입자 가이드 
 st.write("")
 
 # ----------------------------------------
-# 상단: 입력 + 결과
+# 상단 탭 구성
 # ----------------------------------------
-left_col, right_col = st.columns([1.1, 1])
-
-with left_col:
-    st.header("1. 기본 정보 입력")
-
-    address = st.text_input("집 주소", placeholder="예) 서울시 ○○구 ○○로 123, 302호")
-
-    c1, c2 = st.columns(2)
-    with c1:
-        deposit = st.number_input("보증금 (만원)", min_value=0, step=100)
-    with c2:
-        rent = st.number_input("월세 (만원)", min_value=0, step=5)
-
-    c3, c4 = st.columns(2)
-    with c3:
-        contract_type = st.selectbox("계약 형태", ["전세", "반전세", "월세"])
-    with c4:
-        tenant_type = st.selectbox("세입자 유형", ["학생·청년", "1인 가구", "가족 세대", "외국인 세입자"])
-
-    st.markdown("**생활 패턴 체크 (선택)**")
-    noise_sensitive = st.checkbox("소음에 예민한 편이에요", value=False)
-    hate_walking = st.checkbox("걷는 걸 별로 좋아하지 않아요 (역·버스는 최대한 가까웠으면 좋겠어요)", value=False)
-    night_active = st.checkbox("야행성/늦게까지 깨어 있는 편이에요", value=False)
-
-    memo = st.text_area(
-        "집 상태 메모 (선택)",
-        placeholder="예) 벽 곰팡이 조금, 천장 누수 자국, 옆집 소음 심함, 귀신 소문 있음 등",
-        height=80,
-    )
-
-    st.caption("※ 메모에 적은 곰팡이·누수·소음·악취·벌레·귀신 소문 등도 위험도 계산에 반영됩니다.")
-
-    reg_file = st.file_uploader(
-        "등기부등본 이미지 또는 PDF (선택)",
-        type=["png", "jpg", "jpeg", "pdf"],
-        help="실제 서비스라면 등기부를 자동 인식해 소유자·근저당·가압류 등을 분석합니다.",
-    )
-
-    scan_clicked = st.button("위험도 스캔하기")
-
-with right_col:
-    st.header("2. 현재 조건 기준 위험도 요약")
-
-    if scan_clicked and deposit > 0:
-        score, memo_issues = compute_risk_score(deposit, rent, contract_type, memo)
-    elif deposit > 0:
-        score, memo_issues = compute_risk_score(deposit, rent, contract_type, memo)
-    else:
-        score, memo_issues = None, []
-
-    if score is None:
-        st.write("아직 스캔 전입니다. 왼쪽 정보를 입력하고 **'위험도 스캔하기'** 버튼을 눌러 주세요.")
-        st.write("· 위험도 점수: -- / 100점")
-        st.write("· 전·월세 위험 수준: -")
-    else:
-        level, msg = risk_label(score)
-        st.markdown(f"**위험도 점수: {score} / 100점**")
-        st.markdown(f"**전·월세 위험 수준: {level}**")
-        st.write(msg)
-        st.progress(score / 100.0)
-
-        if memo_issues:
-            st.write("메모에서 감지된 내부 위험 요소:", ", ".join(memo_issues))
-        else:
-            st.write("메모에서 특별한 위험 키워드는 감지되지 않았어요.")
-
-    # --------- 주변 교통 + 실제 지도 + POI 요약 ---------
-    st.subheader("주변 교통·지도·편의시설")
-
-    if address:
-        # 간단 교통 요약
-        st.markdown(get_transit_summary_text(address))
-
-        # 실제 지도 임베드 (Google Maps)
-        encoded_addr = urllib.parse.quote(address)
-        map_url = f"https://www.google.com/maps?q={encoded_addr}&output=embed"
-
-        st.markdown("**아래 지도는 입력한 주소를 기준으로 한 실제 지도 화면입니다.**")
-        components.iframe(map_url, height=400)
-
-        # 생활 패턴 코멘트
-        lifestyle_comment = get_lifestyle_comment(address, noise_sensitive, hate_walking, night_active)
-        if lifestyle_comment:
-            st.markdown(lifestyle_comment)
-
-        # 주변 지하철/편의점/공원/큰 도로 요약
-        poi_summary = get_poi_summary_text(address)
-        if poi_summary:
-            st.markdown(poi_summary)
-    else:
-        st.caption("주소를 입력하면, 해당 주소 기준 실제 지도와 주변 지하철·편의점·공원·큰 도로 정보를 요약해서 보여줍니다.")
-
-    # --------- 등기부 해석 ---------
-    st.subheader("등기부등본 자동 해석 (예시)")
-    if reg_file is not None:
-        if getattr(reg_file, "type", "").startswith("image/"):
-            st.image(reg_file, caption="업로드한 등기부등본 (예시)", use_column_width=True)
-        else:
-            st.caption("PDF 형식 등기부가 업로드되었습니다. (데모 버전이라 실제 내용은 분석하지 않습니다.)")
-
-        explain = (
-            "- 현재 버전은 데모라 등기부 내용을 실제로 읽지는 않습니다.\n"
-            "- 실제 서비스라면 다음 정보를 자동으로 뽑아서 보여줍니다:\n"
-            "  - 소유자 이름, 공유 지분 여부\n"
-            "  - 근저당권(은행명, 채권최고액, 설정일, 순위)\n"
-            "  - 가압류·가처분 등 권리관계\n"
-            "  - 세입자 입장에서 위험한 조합(선순위 근저당 과도, 다수의 가압류 등)"
-        )
-        st.markdown(explain)
-    else:
-        st.caption("등기부등본을 올리면 여기에서 권리관계 요약(예시)을 보여주는 화면입니다.")
-
-    st.caption(
-        "※ 깡통체크는 교육용 도구이며, 실제 법률 자문·신고는 "
-        "한국법률구조공단·HUG·지자체 주거 상담 창구 등과 꼭 상의해야 합니다."
-    )
-
-# ----------------------------------------
-# 하단 탭들
-# ----------------------------------------
-tab_check, tab_review, tab_after, tab_share, tab_sim = st.tabs(
-    ["계약 전 체크리스트", "집 후기", "분쟁 발생 시 대응", "부모님과 결과 공유", "조건 시뮬레이션"]
+main_tab, tab_check, tab_review, tab_after, tab_share, tab_sim = st.tabs(
+    ["🏠 메인 (주소·위험도·지도)", "✅ 계약 전 체크리스트", "📝 집 후기", "⚖️ 분쟁 발생 시 대응", "📤 부모님과 결과 공유", "📊 조건 시뮬레이션"]
 )
 
-# ---------------- 체크리스트 탭 ----------------
+# 기본 변수들 기본값 (탭 간 공유용)
+if "address" not in st.session_state:
+    st.session_state["address"] = ""
+if "deposit" not in st.session_state:
+    st.session_state["deposit"] = 0
+if "rent" not in st.session_state:
+    st.session_state["rent"] = 0
+if "contract_type" not in st.session_state:
+    st.session_state["contract_type"] = "전세"
+if "tenant_type" not in st.session_state:
+    st.session_state["tenant_type"] = "학생·청년"
+if "memo" not in st.session_state:
+    st.session_state["memo"] = ""
+if "noise_sensitive" not in st.session_state:
+    st.session_state["noise_sensitive"] = False
+if "hate_walking" not in st.session_state:
+    st.session_state["hate_walking"] = False
+if "night_active" not in st.session_state:
+    st.session_state["night_active"] = False
+if "score" not in st.session_state:
+    st.session_state["score"] = None
+if "memo_issues" not in st.session_state:
+    st.session_state["memo_issues"] = []
+
+# ---------------- 메인 탭 ----------------
+with main_tab:
+    left_col, right_col = st.columns([1.1, 1])
+
+    with left_col:
+        st.header("1. 기본 정보 입력")
+
+        st.session_state["address"] = st.text_input(
+            "집 주소", 
+            value=st.session_state["address"],
+            placeholder="예) 서울시 ○○구 ○○로 123, 302호"
+        )
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.session_state["deposit"] = st.number_input(
+                "보증금 (만원)", 
+                min_value=0, 
+                step=100, 
+                value=st.session_state["deposit"]
+            )
+        with c2:
+            st.session_state["rent"] = st.number_input(
+                "월세 (만원)", 
+                min_value=0, 
+                step=5, 
+                value=st.session_state["rent"]
+            )
+
+        c3, c4 = st.columns(2)
+        with c3:
+            st.session_state["contract_type"] = st.selectbox(
+                "계약 형태", 
+                ["전세", "반전세", "월세"],
+                index=["전세", "반전세", "월세"].index(st.session_state["contract_type"])
+            )
+        with c4:
+            st.session_state["tenant_type"] = st.selectbox(
+                "세입자 유형", 
+                ["학생·청년", "1인 가구", "가족 세대", "외국인 세입자"],
+                index=["학생·청년", "1인 가구", "가족 세대", "외국인 세입자"].index(st.session_state["tenant_type"])
+            )
+
+        st.markdown("**생활 패턴 체크 (선택)**")
+        st.session_state["noise_sensitive"] = st.checkbox(
+            "소음에 예민한 편이에요", 
+            value=st.session_state["noise_sensitive"]
+        )
+        st.session_state["hate_walking"] = st.checkbox(
+            "걷는 걸 별로 좋아하지 않아요 (역·버스는 최대한 가까웠으면 좋겠어요)",
+            value=st.session_state["hate_walking"]
+        )
+        st.session_state["night_active"] = st.checkbox(
+            "야행성/늦게까지 깨어 있는 편이에요",
+            value=st.session_state["night_active"]
+        )
+
+        st.session_state["memo"] = st.text_area(
+            "집 상태 메모 (선택)",
+            value=st.session_state["memo"],
+            placeholder="예) 벽 곰팡이 조금, 천장 누수 자국, 옆집 소음 심함, 귀신 소문 있음 등",
+            height=80,
+        )
+
+        st.caption("※ 메모에 적은 곰팡이·누수·소음·악취·벌레·귀신 소문 등도 위험도 계산에 반영됩니다.")
+
+        reg_file = st.file_uploader(
+            "등기부등본 이미지 또는 PDF (선택)",
+            type=["png", "jpg", "jpeg", "pdf"],
+            help="실제 서비스라면 등기부를 자동 인식해 소유자·근저당·가압류 등을 분석합니다.",
+        )
+
+        scan_clicked = st.button("위험도 스캔하기")
+
+        # 위험도 계산
+        if scan_clicked and st.session_state["deposit"] > 0:
+            s = st.session_state
+            score, memo_issues = compute_risk_score(
+                s["deposit"], s["rent"], s["contract_type"], s["memo"]
+            )
+            st.session_state["score"] = score
+            st.session_state["memo_issues"] = memo_issues
+        elif st.session_state["deposit"] > 0 and st.session_state["score"] is None:
+            s = st.session_state
+            score, memo_issues = compute_risk_score(
+                s["deposit"], s["rent"], s["contract_type"], s["memo"]
+            )
+            st.session_state["score"] = score
+            st.session_state["memo_issues"] = memo_issues
+
+    with right_col:
+        st.header("2. 현재 조건 기준 위험도 요약")
+
+        score = st.session_state["score"]
+        memo_issues = st.session_state["memo_issues"]
+        deposit = st.session_state["deposit"]
+        rent = st.session_state["rent"]
+        address = st.session_state["address"]
+        contract_type = st.session_state["contract_type"]
+        tenant_type = st.session_state["tenant_type"]
+        noise_sensitive = st.session_state["noise_sensitive"]
+        hate_walking = st.session_state["hate_walking"]
+        night_active = st.session_state["night_active"]
+        memo = st.session_state["memo"]
+
+        if score is None or deposit <= 0:
+            st.write("아직 스캔 전입니다. 왼쪽 정보를 입력하고 **'위험도 스캔하기'** 버튼을 눌러 주세요.")
+            st.write("· 위험도 점수: -- / 100점")
+            st.write("· 전·월세 위험 수준: -")
+        else:
+            level, msg = risk_label(score)
+            st.markdown(f"**위험도 점수: {score} / 100점**")
+            st.markdown(f"**전·월세 위험 수준: {level}**")
+            st.write(msg)
+            st.progress(score / 100.0)
+
+            if memo_issues:
+                st.write("메모에서 감지된 내부 위험 요소:", ", ".join(memo_issues))
+            else:
+                st.write("메모에서 특별한 위험 키워드는 감지되지 않았어요.")
+
+        # 주변 교통 + 지도 + 편의시설 요약
+        st.subheader("주변 교통·지도·편의시설")
+
+        if address:
+            st.markdown(get_transit_summary_text(address))
+
+            encoded_addr = urllib.parse.quote(address)
+            map_url = f"https://www.google.com/maps?q={encoded_addr}&output=embed"
+
+            st.markdown("**아래 지도는 입력한 주소를 기준으로 한 실제 지도 화면입니다.**")
+            components.iframe(map_url, height=400)
+
+            lifestyle_comment = get_lifestyle_comment(address, noise_sensitive, hate_walking, night_active)
+            if lifestyle_comment:
+                st.markdown(lifestyle_comment)
+
+            poi_summary = get_poi_summary_text(address)
+            if poi_summary:
+                st.markdown(poi_summary)
+        else:
+            st.caption("주소를 입력하면, 해당 주소 기준 실제 지도와 주변 지하철·편의점·공원·큰 도로 정보를 요약해서 보여줍니다.")
+
+        # 등기부 해석
+        st.subheader("등기부등본 자동 해석 (예시)")
+        if reg_file is not None:
+            if getattr(reg_file, "type", "").startswith("image/"):
+                st.image(reg_file, caption="업로드한 등기부등본 (예시)", use_column_width=True)
+            else:
+                st.caption("PDF 형식 등기부가 업로드되었습니다. (데모 버전이라 실제 내용은 분석하지 않습니다.)")
+
+            explain = (
+                "- 현재 버전은 데모라 등기부 내용을 실제로 읽지는 않습니다.\n"
+                "- 실제 서비스라면 다음 정보를 자동으로 뽑아서 보여줍니다:\n"
+                "  - 소유자 이름, 공유 지분 여부\n"
+                "  - 근저당권(은행명, 채권최고액, 설정일, 순위)\n"
+                "  - 가압류·가처분 등 권리관계\n"
+                "  - 세입자 입장에서 위험한 조합(선순위 근저당 과도, 다수의 가압류 등)"
+            )
+            st.markdown(explain)
+        else:
+            st.caption("등기부등본을 올리면 여기에서 권리관계 요약(예시)을 보여주는 화면입니다.")
+
+        st.caption(
+            "※ 깡통체크는 교육용 도구이며, 실제 법률 자문·신고는 "
+            "한국법률구조공단·HUG·지자체 주거 상담 창구 등과 꼭 상의해야 합니다."
+        )
+
+# ---------------- 계약 전 체크리스트 탭 ----------------
 with tab_check:
     st.subheader("계약 전 체크리스트")
     st.caption(
@@ -359,10 +431,10 @@ with tab_review:
     if "reviews" not in st.session_state:
         st.session_state["reviews"] = {}
 
-    addr_key = (address or "").strip()
+    addr_key = (st.session_state["address"] or "").strip()
 
     if not addr_key:
-        st.info("먼저 위에서 **주소를 입력**하면, 해당 주소 기준으로 후기를 남기고 볼 수 있어요.")
+        st.info("먼저 **메인 탭에서 주소를 입력**하면, 해당 주소 기준으로 후기를 남기고 볼 수 있어요.")
     else:
         reviews = st.session_state["reviews"].get(addr_key, [])
         st.markdown(f"**현재 이 주소에 등록된 후기: {len(reviews)}개**")
@@ -457,12 +529,23 @@ with tab_after:
     )
     st.markdown(after_text)
 
-# ---------------- 부모님과 공유 탭 ----------------
+# ---------------- 부모님과 결과 공유 탭 ----------------
 with tab_share:
     st.subheader("부모님과 결과 공유")
 
-    if "score" not in locals() or score is None or deposit <= 0:
-        st.write("먼저 위쪽에서 주소·보증금 등을 입력하고 **'위험도 스캔하기'** 버튼을 눌러 주세요.")
+    score = st.session_state["score"]
+    deposit = st.session_state["deposit"]
+    rent = st.session_state["rent"]
+    address = st.session_state["address"]
+    contract_type = st.session_state["contract_type"]
+    tenant_type = st.session_state["tenant_type"]
+    memo_issues = st.session_state["memo_issues"]
+    noise_sensitive = st.session_state["noise_sensitive"]
+    hate_walking = st.session_state["hate_walking"]
+    night_active = st.session_state["night_active"]
+
+    if score is None or deposit <= 0:
+        st.write("먼저 **메인 탭에서 주소·보증금 등을 입력하고 '위험도 스캔하기'** 버튼을 눌러 주세요.")
     else:
         level, msg = risk_label(score)
         issues_text = ", ".join(memo_issues) if memo_issues else "특이사항 없음"
@@ -508,7 +591,7 @@ with tab_share:
             "  - 혹시 더 안전한 매물이 있는지, 중개사에게 무엇을 더 물어봐야 할지"
         )
 
-# ---------------- 시뮬레이션 탭 ----------------
+# ---------------- 조건 시뮬레이션 탭 ----------------
 with tab_sim:
     st.subheader("조건 시뮬레이션")
 
