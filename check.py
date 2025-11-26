@@ -481,3 +481,27 @@ with tab_share:
             "  - 이 보증금·월세 수준이 우리 집 형편에 맞는지\n"
             "  - 전세보증보험을 꼭 드는 게 좋을지\n"
             "  - 혹시 더 안전한 매물이 있는지, 중개사에게 무엇을 더 물어봐야 할지"
+        )
+
+# ---------------- 시뮬레이션 탭 ----------------
+with tab_sim:
+    st.subheader("조건 시뮬레이션")
+
+    s_deposit = st.slider(
+        "보증금 (만원)", min_value=500, max_value=10000, value=5000, step=500
+    )
+    s_rent = st.slider(
+        "월세 (만원)", min_value=0, max_value=100, value=40, step=5
+    )
+    s_type = st.selectbox("계약 형태(가정)", ["전세", "반전세", "월세"])
+
+    sim_score, _ = compute_risk_score(s_deposit, s_rent, s_type, "")
+    level, msg = risk_label(sim_score)
+
+    st.markdown(f"**시뮬레이션 점수: {sim_score} / 100점 · {level}**")
+    st.progress(sim_score / 100.0)
+    st.caption(
+        "보증금·월세·계약 형태에 따라 위험도가 어떻게 바뀌는지 감각을 익히기 위한 기능입니다."
+    )
+
+st.caption("© 2025 깡통체크(가상 서비스) · 전세사기 예방 교육용 프로토타입")
