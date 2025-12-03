@@ -39,11 +39,11 @@ def analyze_registry_text(text: str):
 
     result = {
         "raw_text": text,
-        "preview": text[:1500] if text else "",
-        "mortgage_count": 0,
-        "mortgage_total": 0,
-        "owner_lines": [],
-        "warnings": [],
+            "preview": text[:1500] if text else "",
+            "mortgage_count": 0,
+            "mortgage_total": 0,
+            "owner_lines": [],
+            "warnings": [],
     }
 
     if not text:
@@ -109,15 +109,23 @@ def analyze_registry_text(text: str):
 
 
 # ================================
-# 위험도 계산 (전세가율 중심)
+# 위험도 계산 (매매가 + 전세 시세 둘 다 반영)
 # ================================
-def compute_risk_score(deposit, rent, contract_type, memo="", jeonse_rate=None):
+def compute_risk_score(
+    deposit,
+    rent,
+    contract_type,
+    memo="",
+    jeonse_rate_sale=None,
+    jeonse_rate_market=None,
+):
     """
     위험도 계산 (0~100점)
 
-    - 메인 기준: 전세가율(보증금 ÷ 시세 × 100)
-    - 서브 기준: 전세가율이 없을 때 보증금 절대 크기
-    - 추가: 계약 형태, 월세, 메모(곰팡이/누수/소음/귀신 등) 키워드
+    - 메인 1: 집값 대비 전세가율 jeonse_rate_sale (보증금 회수 가능성)
+    - 메인 2: 전세 시세 대비 jeonse_rate_market (시장 전세보다 과하게 비싼지)
+    - 서브: 전세가율 모를 때 보증금 절대 크기
+    - 추가: 계약 형태, 월세, 메모 키워드 (곰팡이·누수·소음·귀신 등)
 
     단위는 모두 "원".
     """
@@ -126,20 +134,18 @@ def compute_risk_score(deposit, rent, contract_type, memo="", jeonse_rate=None):
 
     score = 0
 
-    # 1) 전세가율이 있으면 그걸 가장 크게 반영
-    if jeonse_rate is not None and jeonse_rate > 0:
-        if jeonse_rate < 60:
-            # 시세 대비 보증금 여유 많음
-            score += 10
-        elif jeonse_rate < 80:
-            score += 30
-        elif jeonse_rate < 90:
-            score += 55
+    # 1) 집값 대비 전세가율 (jeonse_rate_sale)
+    if jeonse_rate_sale is not None and jeonse_rate_sale > 0:
+        if jeonse_rate_sale < 60:
+            score += 8      # 여유 많음
+        elif jeonse_rate_sale < 80:
+            score += 25
+        elif jeonse_rate_sale < 90:
+            score += 45
         else:
-            # 90% 이상이면 깡통 위험 구간
-            score += 75
+            score += 65     # 90% 이상이면 깡통 위험 구간
     else:
-        # 전세가율 모를 때: 보증금 절대 크기로만 대략 평가 (fallback)
+        # 집값 모를 때: 보증금 절대 크기 기준
         if deposit < 50_000_000:         # 5천만 미만
             score += 15
         elif deposit < 150_000_000:      # 5천만~1억5천
@@ -147,9 +153,21 @@ def compute_risk_score(deposit, rent, contract_type, memo="", jeonse_rate=None):
         else:                            # 1억5천 이상
             score += 45
 
-    # 2) 계약 형태 / 월세
+    # 2) 전세 시세 대비 (jeonse_rate_market)
+    if jeonse_rate_market is not None and jeonse_rate_market > 0:
+        # 100% = 전세 시세와 동일
+        if jeonse_rate_market <= 100:
+            score += 0       # 시세 수준
+        elif jeonse_rate_market <= 110:
+            score += 8       # 시세보다 조금 비쌈
+        elif jeonse_rate_market <= 120:
+            score += 18      # 꽤 비쌈 → 의심
+        else:
+            score += 28      # 120% 초과 → 매우 비쌈 (위험·호갱 가능성)
+
+    # 3) 계약 형태 / 월세
     if contract_type == "전세":
-        score += 5   # 전세는 보증금이 커서 리스크 한 번 더 고려
+        score += 5
         rent_for_calc = 0
     elif contract_type == "반전세":
         score += 10
@@ -158,14 +176,13 @@ def compute_risk_score(deposit, rent, contract_type, memo="", jeonse_rate=None):
         score += 15
         rent_for_calc = rent
 
-    # 월세 크기에 따라 약간만 조정 (깡통과 직접 관련은 적으니까 가중치는 작게)
     if contract_type != "전세":
         if rent_for_calc >= 1_000_000:   # 월 100만 이상
             score += 5
         if rent_for_calc >= 2_000_000:   # 월 200만 이상
             score += 5
 
-    # 3) 메모 키워드 (곰팡이·누수·소음 등) → 내부 거주 환경 리스크
+    # 4) 메모 키워드 → 내부 거주 환경 리스크
     issues = []
     memo = memo or ""
     keywords = {
@@ -188,7 +205,6 @@ def compute_risk_score(deposit, rent, contract_type, memo="", jeonse_rate=None):
             score += w
             issues.append(name)
 
-    # 4) 점수 클램프
     score = max(0, min(100, score))
     issues = sorted(set(issues))
     return score, issues
@@ -332,8 +348,10 @@ defaults = {
     "memo_issues": [],
     "registry_analysis": None,
     "area_pyeong": 0.0,
-    "avg_price": 0,
-    "jeonse_rate": None,
+    "avg_price": 0,             # 매매가
+    "avg_jeonse_price": 0,      # 전세 시세
+    "jeonse_rate_sale": None,   # 집값 대비 전세가율
+    "jeonse_rate_market": None, # 전세 시세 대비 비율
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -447,31 +465,6 @@ with main_tab:
 
         scan_clicked = st.button("위험도 스캔하기")
 
-        # 위험도 계산
-        if scan_clicked and st.session_state["deposit"] > 0:
-            s = st.session_state
-            score, memo_issues = compute_risk_score(
-                s["deposit"],
-                s["rent"],
-                s["contract_type"],
-                s["memo"],
-                jeonse_rate=s["jeonse_rate"],
-            )
-            st.session_state["score"] = score
-            st.session_state["memo_issues"] = memo_issues
-
-        elif st.session_state["deposit"] > 0 and st.session_state["score"] is None:
-            s = st.session_state
-            score, memo_issues = compute_risk_score(
-                s["deposit"],
-                s["rent"],
-                s["contract_type"],
-                s["memo"],
-                jeonse_rate=s["jeonse_rate"],
-            )
-            st.session_state["score"] = score
-            st.session_state["memo_issues"] = memo_issues
-
         # 등기부 분석 (업로드 시)
         if reg_file is not None:
             st.caption("▶ 업로드한 등기부를 기반으로 **간단 자동 분석**을 시도합니다. (텍스트 PDF 위주)")
@@ -481,13 +474,11 @@ with main_tab:
         else:
             st.session_state["registry_analysis"] = None
 
-    # ----- 오른쪽: 결과 + 지도 + 등기부 -----
+    # ----- 오른쪽 상단: 위험도/시세 -----
     with right_col:
         st.header("2. 현재 조건 기준 위험도 요약")
 
         s = st.session_state
-        score = s["score"]
-        memo_issues = s["memo_issues"]
         deposit = s["deposit"]
         rent = s["rent"]
         address = s["address"]
@@ -496,6 +487,108 @@ with main_tab:
         noise_sensitive = s["noise_sensitive"]
         hate_walking = s["hate_walking"]
         night_active = s["night_active"]
+        memo = s["memo"]
+
+        # ---- 시세 기반 전세가율 계산 ----
+        st.subheader("3. 시세 기반 전세가율 계산")
+
+        st.caption(
+            "네이버 부동산·국토부 실거래가에서 **같은 단지/비슷한 평수**의 최근 매매가와 전세 시세를 확인해서 "
+            "아래에 입력하면, 보증금이 얼마나 위험한지 더 정확하게 볼 수 있어요."
+        )
+
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            s["area_pyeong"] = st.number_input(
+                "전용 면적 (평)",
+                min_value=0.0,
+                step=0.5,
+                value=s["area_pyeong"],
+            )
+        with col_s2:
+            s["avg_price"] = st.number_input(
+                "해당 평형 최근 *매매가* (원)",
+                min_value=0,
+                step=1_000_000,
+                value=s["avg_price"],
+                format="%d",
+            )
+
+        # 전세 시세 입력
+        s["avg_jeonse_price"] = st.number_input(
+            "비슷한 평형 *전세 시세* (원)",
+            min_value=0,
+            step=1_000_000,
+            value=s["avg_jeonse_price"],
+            format="%d",
+        )
+
+        jeonse_rate_sale = None
+        jeonse_rate_market = None
+
+        if s["avg_price"] > 0 and deposit > 0:
+            jeonse_rate_sale = deposit / s["avg_price"] * 100
+            s["jeonse_rate_sale"] = jeonse_rate_sale
+            st.markdown(f"- 집값 기준 **전세가율(보증금 ÷ 매매가)**: {jeonse_rate_sale:.1f}%")
+
+        if s["avg_jeonse_price"] > 0 and deposit > 0:
+            jeonse_rate_market = deposit / s["avg_jeonse_price"] * 100
+            s["jeonse_rate_market"] = jeonse_rate_market
+            st.markdown(f"- 전세 시세 대비 **보증금 비율(보증금 ÷ 전세 시세)**: {jeonse_rate_market:.1f}%")
+
+        if jeonse_rate_sale is not None:
+            if jeonse_rate_sale < 60:
+                st.write("→ 집값 대비 보증금이 꽤 여유 있는 편이에요.")
+            elif jeonse_rate_sale < 80:
+                st.write("→ 집값 대비 보증금이 보통 수준이에요.")
+            elif jeonse_rate_sale < 90:
+                st.write("→ 집값 대비 보증금이 꽤 높습니다. 깡통 위험을 의심해 봐야 해요.")
+            else:
+                st.write("🚨 집값 대비 보증금이 **매우 높습니다(90% 이상)**. 깡통전세 위험 구간일 수 있어요.")
+
+        if jeonse_rate_market is not None:
+            if jeonse_rate_market <= 100:
+                st.write("→ 이 동네 전세 시세와 비슷하거나 조금 낮은 편이에요.")
+            elif jeonse_rate_market <= 110:
+                st.write("→ 전세 시세보다 조금 비싼 편이에요. 다른 매물과 비교해 보는 게 좋아요.")
+            elif jeonse_rate_market <= 120:
+                st.write("→ 전세 시세보다 꽤 많이 비쌉니다. 조건을 한 번 더 꼼꼼히 따져 보세요.")
+            else:
+                st.write("🚨 전세 시세 대비 **너무 비싼 보증금**입니다. 호갱/전세사기 가능성을 의심해 봐야 해요.")
+
+        if s["avg_price"] == 0 and s["avg_jeonse_price"] == 0:
+            st.caption("보증금과 매매가/전세 시세를 입력하면 전세가율을 계산해 줄게요.")
+
+        # ---- 위험도 계산 버튼 (시세 입력 이후/이전 모두 가능) ----
+        if scan_clicked and deposit > 0:
+            score, memo_issues = compute_risk_score(
+                deposit,
+                rent,
+                contract_type,
+                memo,
+                jeonse_rate_sale=s.get("jeonse_rate_sale"),
+                jeonse_rate_market=s.get("jeonse_rate_market"),
+            )
+            s["score"] = score
+            s["memo_issues"] = memo_issues
+
+        if s["score"] is None and deposit > 0:
+            score, memo_issues = compute_risk_score(
+                deposit,
+                rent,
+                contract_type,
+                memo,
+                jeonse_rate_sale=s.get("jeonse_rate_sale"),
+                jeonse_rate_market=s.get("jeonse_rate_market"),
+            )
+            s["score"] = score
+            s["memo_issues"] = memo_issues
+
+        score = s["score"]
+        memo_issues = s["memo_issues"]
+
+        st.markdown("---")
+        st.subheader("4. 전·월세 위험도 점수")
 
         if score is None or deposit <= 0:
             st.write("아직 스캔 전입니다. 왼쪽 정보를 입력하고 **'위험도 스캔하기'** 버튼을 눌러 주세요.")
@@ -520,56 +613,8 @@ with main_tab:
             else:
                 st.write("메모에서 특별한 위험 키워드는 감지되지 않았어요.")
 
-        # ---- 시세 기반 전세가율 ----
-        st.subheader("3. 시세 기반 전세가율 계산")
-
-        st.caption(
-            "네이버 부동산·국토부 실거래가에서 **같은 단지/비슷한 평수**의 최근 매매가를 확인해서 "
-            "아래에 입력하면, 보증금이 시세 대비 얼마나 높은지(전세가율)를 계산해 줄게요."
-        )
-
-        col_s1, col_s2 = st.columns(2)
-        with col_s1:
-            s["area_pyeong"] = st.number_input(
-                "전용 면적 (평)",
-                min_value=0.0,
-                step=0.5,
-                value=s["area_pyeong"],
-            )
-        with col_s2:
-            s["avg_price"] = st.number_input(
-                "해당 평형 최근 매매가 (원)",
-                min_value=0,
-                step=1_000_000,
-                value=s["avg_price"],
-                format="%d",
-            )
-
-        if s["avg_price"] > 0 and deposit > 0:
-            jeonse_rate = deposit / s["avg_price"] * 100
-            s["jeonse_rate"] = jeonse_rate
-
-            st.markdown(f"- 현재 입력한 보증금 기준 **전세가율: {jeonse_rate:.1f}%**")
-
-            if jeonse_rate < 60:
-                st.write("→ 시세 대비 보증금 비율이 꽤 여유 있는 편이에요.")
-            elif jeonse_rate < 80:
-                st.write("→ 보통 수준이에요. 다른 매물과 함께 비교해 보면 좋아요.")
-            elif jeonse_rate < 90:
-                st.write("→ 전세가율이 꽤 높습니다. 깡통 위험을 꼭 의심해 봐야 해요.")
-            else:
-                st.write("🚨 전세가율이 **90% 이상**입니다. 깡통전세 위험 구간일 수 있어요. 매우 주의!")
-
-            if s["area_pyeong"] > 0:
-                st.caption(
-                    f"(참고) {s['area_pyeong']:.1f}평 기준 매매가 {s['avg_price']:,}원이면, "
-                    f"평당 약 {s['avg_price'] / s['area_pyeong']:,.0f}원 수준이에요."
-                )
-        else:
-            st.caption("보증금과 매매가(시세)를 모두 입력하면 전세가율을 계산해 줄게요.")
-
         # ---- 주변 교통 + 지도 + 편의시설 ----
-        st.subheader("주변 교통·지도·편의시설")
+        st.subheader("5. 주변 교통·지도·편의시설")
 
         if address:
             st.markdown(get_transit_summary_text(address))
@@ -595,7 +640,7 @@ with main_tab:
             )
 
         # ---- 등기부 자동 해석 ----
-        st.subheader("등기부등본 자동 해석 (실험버전)")
+        st.subheader("6. 등기부등본 자동 해석 (실험버전)")
 
         analysis = st.session_state.get("registry_analysis")
         if analysis is None:
@@ -887,7 +932,14 @@ with tab_sim:
     )
     s_type = st.selectbox("계약 형태(가정)", ["전세", "반전세", "월세"])
 
-    sim_score, _ = compute_risk_score(s_deposit, s_rent, s_type, "", jeonse_rate=None)
+    sim_score, _ = compute_risk_score(
+        s_deposit,
+        s_rent,
+        s_type,
+        "",
+        jeonse_rate_sale=None,
+        jeonse_rate_market=None,
+    )
     level, msg = risk_label(sim_score)
 
     st.markdown(f"**시뮬레이션 점수: {sim_score} / 100점 · {level}**")
